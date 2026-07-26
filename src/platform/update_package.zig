@@ -139,8 +139,14 @@ test "platform update package matches exact target asset names only" {
 test "platform update package builds macOS DMG asset names" {
     var buf: [128]u8 = undefined;
     const name = try assetName("v1.28.0", .{ .platform = .macos }, &buf);
-    try std.testing.expectEqualStrings("wispterm-macos-v1.28.0.dmg", name);
-    try std.testing.expect(matchesAssetName("wispterm-macos-v1.28.0.dmg", "v1.28.0", .{ .platform = .macos }));
+    const expected = switch (builtin.cpu.arch) {
+        .aarch64 => "wispterm-macos-aarch64-v1.28.0.dmg",
+        .x86_64 => "wispterm-macos-x86_64-v1.28.0.dmg",
+        else => return error.SkipZigTest,
+    };
+    try std.testing.expectEqualStrings(expected, name);
+    try std.testing.expect(matchesAssetName(expected, "v1.28.0", .{ .platform = .macos }));
+    try std.testing.expect(!matchesAssetName("wispterm-macos-v1.28.0.dmg", "v1.28.0", .{ .platform = .macos }));
     try std.testing.expect(!matchesAssetName("wispterm-macos-v1.28.0.zip", "v1.28.0", .{ .platform = .macos }));
 }
 
