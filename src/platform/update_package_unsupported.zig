@@ -11,7 +11,6 @@ pub fn currentPackage(allocator: std.mem.Allocator, webview_enabled: bool) !rele
 fn defaultPackageForOs(os_tag: std.Target.Os.Tag) release_package.Package {
     return switch (os_tag) {
         .macos => .{ .platform = .macos },
-        .linux => .{ .platform = .linux },
         else => .{ .platform = .unsupported },
     };
 }

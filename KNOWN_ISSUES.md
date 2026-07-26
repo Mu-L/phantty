@@ -13,7 +13,7 @@ plans belong in [ROADMAP.md](ROADMAP.md); completed changes belong in
 | Terminal host | Win32/ConPTY | AppKit/PTY | SDL3/POSIX PTY, experimental |
 | Embedded browser panel | WebView2 | WKWebView | Disabled |
 | WispTerm Remote transport | WinHTTP WebSocket | NSURLSession WebSocket | Not implemented |
-| Auto-update package matching | Windows portable zip flavors | Architecture-specific DMG matching | Not implemented |
+| Auto-update package matching | Windows portable zip flavors | Architecture-specific DMG matching | x86_64 AppImage matching |
 
 ## Version Surfaces
 
@@ -82,7 +82,6 @@ tested passes.
 - Global hotkeys are not implemented, so Quake mode cannot bind a system-wide
   shortcut.
 - Live config reload is not implemented; config changes require restart.
-- Update asset detection does not match Linux AppImage assets yet.
 - Font family enumeration is incomplete; exact `font-family` values can work,
   but picker/autocomplete results may be empty.
 - Off-screen window guards are incomplete.
