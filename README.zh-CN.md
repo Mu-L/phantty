@@ -158,8 +158,9 @@ keybind = global:ctrl+backquote=toggle_quake
 | 关闭聚焦的面板、标签页或窗口 | **Ctrl+Shift+W** | **Cmd+W** |
 | 最大化或还原窗口 | **Alt+Enter** | **Opt+Enter** |
 | 增大 / 减小字号 | **Ctrl++** / **Ctrl+-** | **Cmd++** / **Cmd+-** |
-| 复制终端选区或 AI 聊天选区/记录 | **Ctrl+Shift+C** | **Cmd+Shift+C** |
+| 复制终端选区或 AI 聊天选区/记录 | **Ctrl+Shift+C** | **Cmd+C** |
 | 从上一次终端单击锚点开始选择 | 在终端文本上 Shift 单击 | 在终端文本上 Shift 单击 |
+| tmux 鼠标模式开启时选择终端文本 | **Shift 拖选** | **Shift 拖选** |
 | 选择 AI 回答的一部分 | 拖选 AI 回答文本 | 拖选 AI 回答文本 |
 | 选择并复制 AI 回答的一部分 | Shift 拖选 AI 回答文本 | Shift 拖选 AI 回答文本 |
 | 选择 AI 聊天输入；输入为空时选择整段记录 | 在 AI 聊天中 **Ctrl+A** | 在 AI 聊天中 **Cmd+A** |
@@ -263,7 +264,7 @@ MIT
 ## 引用
 
 Xu, Z.-G. (2026). *WispTerm* (Version 1.33.1) [Computer software]. Zenodo.
-https://doi.org/10.5281/zenodo.20660542
+https://doi.org/10.5281/zenodo.20660541
 
 可直接复制的致谢模板：
 
@@ -272,5 +273,5 @@ https://doi.org/10.5281/zenodo.20660542
 可重复的命令行处理，以及相关文献与分析代码的整理。
 
 Xu, Z.-G. (2026). WispTerm (Version 1.33.1) [Computer software]. Zenodo.
-https://doi.org/10.5281/zenodo.20660542
+https://doi.org/10.5281/zenodo.20660541
 ```
