@@ -53,7 +53,7 @@
 
 ## 版本
 
-桌面应用版本来自仓库根目录的 `build.zig.zon`（当前为 `1.31.0`），也是
+桌面应用版本来自仓库根目录的 `build.zig.zon`（当前为 `1.33.1`），也是
 `wispterm --version`、release notes、桌面发布包和命令中心 `Version` 条目使用的版本。
 
 `remote/` 下的 WispTerm Remote 网页控制台/中继有独立的 npm/web 版本（当前为
@@ -155,11 +155,12 @@ keybind = global:ctrl+backquote=toggle_quake
 | 在图库中查看上一张 / 下一张图片或 PDF（预览面板聚焦时） | Left / Right | Left / Right |
 | PDF 预览上一页 / 下一页（PDF 预览面板聚焦时） | PageUp / PageDown | PageUp / PageDown |
 | 下载 SSH 远程文件 | 在 SSH 输出中 Ctrl+Shift 单击路径 | 在 SSH 输出中 Cmd+Shift 单击路径 |
-| 关闭聚焦的面板、标签页或窗口 | **Ctrl+Shift+W** | **Cmd+Shift+W** |
+| 关闭聚焦的面板、标签页或窗口 | **Ctrl+Shift+W** | **Cmd+W** |
 | 最大化或还原窗口 | **Alt+Enter** | **Opt+Enter** |
 | 增大 / 减小字号 | **Ctrl++** / **Ctrl+-** | **Cmd++** / **Cmd+-** |
-| 复制终端选区或 AI 聊天选区/记录 | **Ctrl+Shift+C** | **Cmd+Shift+C** |
+| 复制终端选区或 AI 聊天选区/记录 | **Ctrl+Shift+C** | **Cmd+C** |
 | 从上一次终端单击锚点开始选择 | 在终端文本上 Shift 单击 | 在终端文本上 Shift 单击 |
+| tmux 鼠标模式开启时选择终端文本 | **Shift 拖选** | **Shift 拖选** |
 | 选择 AI 回答的一部分 | 拖选 AI 回答文本 | 拖选 AI 回答文本 |
 | 选择并复制 AI 回答的一部分 | Shift 拖选 AI 回答文本 | Shift 拖选 AI 回答文本 |
 | 选择 AI 聊天输入；输入为空时选择整段记录 | 在 AI 聊天中 **Ctrl+A** | 在 AI 聊天中 **Cmd+A** |
@@ -178,7 +179,7 @@ keybind = global:ctrl+backquote=toggle_quake
 | 编辑 AI 聊天输入光标 | Left/Right/Home/End/Delete/Backspace | Left/Right/Home/End/Delete/Backspace |
 | 停止进行中的 AI 聊天或智能体请求 | 工作时在 AI 聊天中按 **Esc** | 工作时在 AI 聊天中按 **Esc** |
 | 复制选区（右键） | 右键点击选区 | 右键点击选区 |
-| 粘贴文本 | **Ctrl+V** | **Cmd+V** |
+| 粘贴文本 | **Ctrl+V**；剪贴板没有图片时，**Ctrl+Shift+V** 也会粘贴文本 | **Cmd+V**；剪贴板没有图片时，**Cmd+Shift+V** 也会粘贴文本 |
 | 粘贴剪贴板图片 | **Ctrl+Shift+V** | **Cmd+Shift+V** |
 | 把焦点移到相邻面板 | **Alt** + 方向键 | **Opt** + 方向键 |
 | 按编号聚焦面板 1–9 | **Ctrl+1**–**9** | **Cmd+1**–**9** |
@@ -262,8 +263,8 @@ MIT
 
 ## 引用
 
-Xu, Z.-G. (2026). *WispTerm* (Version 1.31.0) [Computer software]. Zenodo.
-https://doi.org/10.5281/zenodo.20660542
+Xu, Z.-G. (2026). *WispTerm* (Version 1.33.1) [Computer software]. Zenodo.
+https://doi.org/10.5281/zenodo.20660541
 
 可直接复制的致谢模板：
 
@@ -271,6 +272,6 @@ https://doi.org/10.5281/zenodo.20660542
 我们在生命科学数据分析中使用 WispTerm 作为计算环境的一部分，用于远程计算流程、
 可重复的命令行处理，以及相关文献与分析代码的整理。
 
-Xu, Z.-G. (2026). WispTerm (Version 1.31.0) [Computer software]. Zenodo.
-https://doi.org/10.5281/zenodo.20660542
+Xu, Z.-G. (2026). WispTerm (Version 1.33.1) [Computer software]. Zenodo.
+https://doi.org/10.5281/zenodo.20660541
 ```
