@@ -54,6 +54,8 @@ pub const OverlayState = struct {
     btw: btw_conversation.State = .{},
     whats_new: WhatsNewState = .{},
     snippets: SnippetState = .{},
+    // Dismiss the floating key overlay only for the key the user copied.
+    remote_key_dismissed_digest: ?[32]u8 = null,
 
     pub fn deinit(self: *OverlayState, allocator: std.mem.Allocator) void {
         self.btw.close();
@@ -78,6 +80,7 @@ test "overlay state aggregates migrated overlay groups" {
     state.command_palette.openWithMode(.commands);
     state.mcp.beginAdd();
     state.mcp.setFormField(.name, "srv");
+    state.remote_key_dismissed_digest = [_]u8{7} ** 32;
 
     try std.testing.expect(state.settings.visible);
     try std.testing.expectEqualStrings("Copied", state.toasts.copy.text().?);
@@ -87,6 +90,7 @@ test "overlay state aggregates migrated overlay groups" {
     try std.testing.expectEqual(@as(usize, 2), state.session.ai_history_source_selected);
     try std.testing.expect(state.command_palette.visible);
     try std.testing.expectEqualStrings("srv", state.mcp.formField(.name));
+    try std.testing.expectEqual(@as(u8, 7), state.remote_key_dismissed_digest.?[0]);
 }
 
 test "overlay state deinit releases settings cache" {

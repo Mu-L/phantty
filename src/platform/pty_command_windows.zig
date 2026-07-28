@@ -258,10 +258,11 @@ fn appendAscii(buf: []u8, pos: *usize, text: []const u8) bool {
     return true;
 }
 
-/// Escape `arg` for a double-quoted Windows command-line argument WITHOUT the
-/// surrounding quotes, so callers can splice an unquoted literal (e.g. an env
-/// prefix) into the same quoted run.
-fn appendCommandLineQuotedInner(buf: []u8, pos: *usize, arg: []const u8) bool {
+/// Append `arg` as one double-quoted Windows command-line argument.
+fn appendCommandLineQuotedArg(buf: []u8, pos: *usize, arg: []const u8) bool {
+    if (pos.* >= buf.len) return false;
+    buf[pos.*] = '"';
+    pos.* += 1;
     for (arg) |ch| {
         if (ch == '"') {
             if (!appendAscii(buf, pos, "\\\"")) return false;
@@ -271,25 +272,11 @@ fn appendCommandLineQuotedInner(buf: []u8, pos: *usize, arg: []const u8) bool {
             pos.* += 1;
         }
     }
-    return true;
-}
-
-fn appendCommandLineQuotedArg(buf: []u8, pos: *usize, arg: []const u8) bool {
-    if (pos.* >= buf.len) return false;
-    buf[pos.*] = '"';
-    pos.* += 1;
-    if (!appendCommandLineQuotedInner(buf, pos, arg)) return false;
     if (pos.* >= buf.len) return false;
     buf[pos.*] = '"';
     pos.* += 1;
     return true;
 }
-
-/// Prepended to an interactive SSH remote command so the remote shell exports a
-/// TERM_PROGRAM that TUIs recognize as Kitty-keyboard-capable (#302). The remote
-/// is a POSIX host, so `export …;` is the right syntax regardless of the local
-/// Windows client.
-const ssh_remote_env_prefix = "export TERM_PROGRAM=ghostty; ";
 
 threadlocal var g_wsl_available_cached: bool = false;
 threadlocal var g_wsl_available_value: bool = false;
@@ -394,14 +381,11 @@ pub fn sshInteractiveCommand(buf: []u8, options: SshCommandOptions) ?[]const u8 
     if (!appendAscii(buf, &pos, "@")) return null;
     if (!appendAscii(buf, &pos, options.host)) return null;
     if (options.remote_command.len > 0) {
-        // Export TERM_PROGRAM on the remote so full-screen TUIs (Claude Code,
-        // Codex) enable the Kitty keyboard protocol there too. ssh forwards TERM
-        // but not TERM_PROGRAM, so we bake it into the remote command. Spliced
-        // inside the double quotes since the prefix is quote-free. tmux -CC
-        // control transport below is deliberately left untouched.
-        if (!appendAscii(buf, &pos, " \"" ++ ssh_remote_env_prefix)) return null;
-        if (!appendCommandLineQuotedInner(buf, &pos, options.remote_command)) return null;
-        if (!appendAscii(buf, &pos, "\"")) return null;
+        // Preserve the caller's command byte-for-byte. In particular, do not
+        // forge TERM_PROGRAM: remote TUIs use it as a capability promise and
+        // may enter terminal-specific protocols WispTerm does not implement.
+        if (!appendAscii(buf, &pos, " ")) return null;
+        if (!appendCommandLineQuotedArg(buf, &pos, options.remote_command)) return null;
     }
     return buf[0..pos];
 }
@@ -801,10 +785,8 @@ test "windows pty command builds SSH interactive command lines" {
         }).?,
     );
 
-    // An interactive remote command gains the TERM_PROGRAM export so remote
-    // Claude Code/Codex enable the Kitty keyboard protocol (#302).
     try std.testing.expectEqualStrings(
-        "cmd.exe /c ssh.exe -tt -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=20 user@example.test \"export TERM_PROGRAM=ghostty; cd /srv && claude\"",
+        "cmd.exe /c ssh.exe -tt -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=20 user@example.test \"cd /srv && claude\"",
         sshInteractiveCommand(&buf, .{
             .user = "user",
             .host = "example.test",
