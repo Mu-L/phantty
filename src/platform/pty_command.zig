@@ -814,6 +814,7 @@ test "platform pty command builds shell command lines for AI History resume" {
     try std.testing.expect(std.mem.indexOf(u8, ssh_command, "ssh") != null);
     try std.testing.expect(std.mem.indexOf(u8, ssh_command, "user@example.test") != null);
     try std.testing.expect(std.mem.indexOf(u8, ssh_command, "codex resume abc") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ssh_command, "TERM_PROGRAM") == null);
 }
 
 test "platform pty command selects backend by target OS" {

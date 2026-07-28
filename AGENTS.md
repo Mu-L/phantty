@@ -45,7 +45,7 @@ Structural debt is frozen mechanically by source-scanning ratchet tests (the sam
 | Guard | Freezes | Today's ceiling | Escape hatch |
 |---|---|---|---|
 | `file_size_guard` | lines in any `src/**/*.zig` | < **10,000** (also `zig build check-sizes`) | split by responsibility; never raise the limit |
-| `global_state_guard` | top-level `g_*` / `threadlocal` in the watched integration/session files | AppWindow **66**, input **49**, overlays **33**, assistant/conversation/session **16** | put new state in a state struct (`appwindow/state.zig`, …) |
+| `global_state_guard` | top-level `g_*` / `threadlocal` in the watched integration/session files | AppWindow **66**, input **49**, overlays **32**, assistant/conversation/session **16** | put new state in a state struct (`appwindow/state.zig`, …) |
 | `import_hub_guard` | `pub const X = @import(...)` re-exports in `AppWindow.zig` | **17** | import the real module directly, not via `AppWindow.X` |
 | `side_effect_guard` | direct `g_force_rebuild` / `g_cells_valid` writes in the watched integration/session files | AppWindow **45**, input **81**, overlays **10**, assistant/conversation/session **0** | return a `UiEffect`, land it through `AppWindow.applyUiEffect` |
 

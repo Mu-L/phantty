@@ -223,10 +223,6 @@ const DebugLineRect = struct {
 
 threadlocal var g_remote_key_copy_rect: ?DebugLineRect = null;
 threadlocal var g_remote_key_copied_until_ms: i64 = 0;
-// Once the user has copied the active session key (via overlay click or the
-// command palette), the floating key overlay is dismissed for that key.
-// Stored as a digest so fixed keys can be shorter or longer than 32 bytes.
-threadlocal var g_remote_key_dismissed_digest: ?[32]u8 = null;
 
 pub const TransferCancelConfirmAction = overlay_keys.TransferCancelConfirmAction;
 
@@ -4185,19 +4181,10 @@ pub fn connectProfileByName(name: []const u8) bool {
 }
 
 fn connectSshProfileReturningSurface(idx: usize) ?*Surface {
-    // Launch the remote login shell explicitly so the SSH command builder's
-    // `export TERM_PROGRAM=ghostty;` prefix actually lands on the remote — ssh
-    // forwards TERM but not TERM_PROGRAM, so a bare interactive `ssh host`
-    // leaves remote Claude Code/Codex unable to enable the Kitty keyboard
-    // protocol (Shift+Enter). This is equivalent to the default interactive
-    // login shell, just with the env exported first (#302).
-    return connectSshProfileReturningSurfaceWithCommand(idx, ssh_interactive_login_shell);
+    // Let OpenSSH start the account's configured login shell. A synthetic
+    // remote command must not be used to forge terminal identity (#579).
+    return connectSshProfileReturningSurfaceWithCommand(idx, "");
 }
-
-/// Re-exec the remote login shell for an interactive SSH profile connection.
-/// Combined with the command builder's TERM_PROGRAM export prefix this yields
-/// `ssh -tt host 'export TERM_PROGRAM=ghostty; exec ${SHELL:-/bin/sh} -l'`.
-const ssh_interactive_login_shell = "exec ${SHELL:-/bin/sh} -l";
 
 fn connectSshProfileReturningSurfaceWithCommand(idx: usize, remote_command: []const u8) ?*Surface {
     if (idx >= sshState().profile_count) return null;
@@ -9056,11 +9043,11 @@ pub fn activateUpdatePrompt() void {
 pub fn remoteKeyOverlayDismiss(key: []const u8) void {
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(key, &digest, .{});
-    g_remote_key_dismissed_digest = digest;
+    overlayState().remote_key_dismissed_digest = digest;
 }
 
 fn isRemoteKeyDismissed(key: []const u8) bool {
-    const dismissed = g_remote_key_dismissed_digest orelse return false;
+    const dismissed = overlayState().remote_key_dismissed_digest orelse return false;
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(key, &digest, .{});
     return std.mem.eql(u8, dismissed[0..], digest[0..]);
