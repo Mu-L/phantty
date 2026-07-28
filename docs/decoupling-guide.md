@@ -212,8 +212,8 @@ and **E** (Windows D3D11). **B** and **C** run in parallel with **A**.
 *Verifiable on Windows; OpenGL keeps working behind the new interface.*
 
 > **Status (A1+A2 landed).** `src/renderer/gpu/gpu.zig` (comptime backend
-> resolver) and `gpu/backend.zig` (`Backend{opengl,metal}`, `default→metal` on
-> Darwin) exist. OpenGL is the first backend under `gpu/opengl/`
+> resolver) and `gpu/backend.zig` (`Backend{opengl,metal,d3d11}`, with D3D11 on
+> Windows, Metal on Darwin, and OpenGL elsewhere) exist. OpenGL is under `gpu/opengl/`
 > (`c.zig`, `Context.zig`, `api.zig`, `gl_init.zig`, `shaders.zig`); the GL
 > table + context load moved out of `AppWindow.zig`, which no longer `@cImport`s
 > `glad`. Consumers reach the table via `AppWindow.gpu.glTable()` (a transition
@@ -314,8 +314,8 @@ Windows-default toolchain.*
 - **D5** Packaging: `.app` bundle / `.dmg` + updater story.
 
 ### Phase E — Windows native D3D11 renderer
-*Gated on Phase A. Windows remains shippable through the existing OpenGL +
-DXGI-present fallback while this lands incrementally.*
+*Landed and selected by default on Windows; the separately built OpenGL path
+remains the compatibility fallback.*
 
 The long-term Windows goal is a true Direct3D 11 renderer, not just the current
 DXGI flip-model presenter for OpenGL frames. The focused roadmap is
@@ -339,8 +339,8 @@ DXGI flip-model presenter for OpenGL frames. The focused roadmap is
 - **E6** Harden for Windows driver reality: device removal/reset, RDP, VMs,
   hybrid GPUs, weak iGPUs, high-DPI monitor moves, rapid resize, and automatic
   fallback to OpenGL + DXGI present.
-- **E7** Switch Windows `auto` backend to D3D11 only after feature parity and at
-  least one compatibility release cycle with the OpenGL fallback intact.
+- **E7** Keep Windows `auto` on D3D11 and retain the OpenGL fallback package
+  while native-driver coverage continues to broaden.
 
 ---
 

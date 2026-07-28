@@ -27,13 +27,12 @@ console release unless the release explicitly includes `remote/`.
 
 ## Windows
 
-- The native D3D11 renderer on `windows-native-render` is still opt-in and is
-  not the Windows `auto` default. Phase VI is blocked until the evidence and
-  rollback checklist in
-  [windows-native-d3d11-default-gate.md](docs/windows-native-d3d11-default-gate.md)
-  is satisfied.
-- D3D11 fallback is next-launch/future-auto policy only. The app does not switch
-  from D3D11 to OpenGL inside the same running process.
+- Starting with v1.34.0, the native D3D11 renderer is the Windows `auto`
+  default. The separately published `portable-opengl` package is the renderer
+  fallback.
+- The app does not switch from D3D11 to OpenGL inside the same running process.
+  A D3D11 startup/rendering failure requires restarting with the separately
+  built OpenGL package.
 - D3D11 Phase V environment matrix gaps are accepted known issues where the
   current operators do not have matching machines or sessions available. These
   accepted gaps are not passing test evidence, and should be replaced with

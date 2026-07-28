@@ -287,8 +287,14 @@ fn defaultEmitSharedCompileChecks(features: PlatformFeatures) bool {
 
 fn resolveGpuBackendBuildOption(raw: ?[]const u8, os_tag: std.Target.Os.Tag) []const u8 {
     const value = raw orelse "auto";
-    if (std.mem.eql(u8, value, "auto") or
-        std.mem.eql(u8, value, "opengl") or
+    if (std.mem.eql(u8, value, "auto")) {
+        return switch (os_tag) {
+            .macos, .ios => "metal",
+            .windows => "d3d11",
+            else => "opengl",
+        };
+    }
+    if (std.mem.eql(u8, value, "opengl") or
         std.mem.eql(u8, value, "metal"))
     {
         return value;
@@ -298,6 +304,15 @@ fn resolveGpuBackendBuildOption(raw: ?[]const u8, os_tag: std.Target.Os.Tag) []c
         return value;
     }
     @panic("-Dgpu-backend must be one of: auto, opengl, metal, d3d11");
+}
+
+test "GPU backend build option resolves platform defaults and explicit overrides" {
+    try std.testing.expectEqualStrings("d3d11", resolveGpuBackendBuildOption(null, .windows));
+    try std.testing.expectEqualStrings("d3d11", resolveGpuBackendBuildOption("auto", .windows));
+    try std.testing.expectEqualStrings("metal", resolveGpuBackendBuildOption("auto", .macos));
+    try std.testing.expectEqualStrings("opengl", resolveGpuBackendBuildOption("auto", .linux));
+    try std.testing.expectEqualStrings("opengl", resolveGpuBackendBuildOption("opengl", .windows));
+    try std.testing.expectEqualStrings("d3d11", resolveGpuBackendBuildOption("d3d11", .windows));
 }
 
 test "default development target remains x86_64 windows gnu" {
@@ -1300,7 +1315,7 @@ fn createAppModuleWithRootAndTestShard(
     // OpenGL backend (Windows + Linux): the glad loader needs its include path
     // and C source compiled in. macOS uses Metal and skips this; the native
     // D3D11 flavor never touches GL, so it skips glad and opengl32 entirely.
-    const links_opengl = !std.mem.eql(u8, gpu_backend, "d3d11");
+    const links_opengl = std.mem.eql(u8, gpu_backend, "opengl");
     if (links_opengl and (target.result.os.tag == .windows or target.result.os.tag == .linux)) {
         app_mod.addIncludePath(b.path("vendor/glad/include"));
         app_mod.addCSourceFile(.{

@@ -10,9 +10,14 @@ fn architectureLabel(arch: std.Target.Cpu.Arch) ?[]const u8 {
     };
 }
 
-pub fn currentPackage(allocator: std.mem.Allocator, webview_enabled: bool) !release_package.Package {
+pub fn currentPackage(
+    allocator: std.mem.Allocator,
+    webview_enabled: bool,
+    gpu_backend: []const u8,
+) !release_package.Package {
     _ = allocator;
     _ = webview_enabled;
+    _ = gpu_backend;
     if (architectureLabel(builtin.cpu.arch) == null) return error.UnsupportedMacosArchitecture;
     return .{ .platform = .macos };
 }
@@ -48,7 +53,10 @@ fn matchesAssetNameForArch(
 }
 
 test "macOS update package reports the native platform package" {
-    try std.testing.expectEqual(release_package.Platform.macos, (try currentPackage(std.testing.allocator, false)).platform);
+    try std.testing.expectEqual(
+        release_package.Platform.macos,
+        (try currentPackage(std.testing.allocator, false, "metal")).platform,
+    );
 }
 
 test "macOS update package builds architecture-qualified asset names" {

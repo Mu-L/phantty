@@ -16,13 +16,20 @@ WispTerm's target GPU matrix is:
 | Linux | OpenGL | Default experimental Linux renderer |
 | Windows fallback | OpenGL + DXGI flip-present | Compatibility path during and after migration |
 
-Current Windows builds already use a DXGI/D3D11 flip-model presenter when
-`wispterm-d3d-present = true`, but the terminal content is still drawn by the
-OpenGL renderer and then copied into the DXGI swapchain. This roadmap changes
-that into a real `d3d11` backend that draws cells, glyphs, emoji, UI, images,
-and render targets directly with Direct3D 11.
+Starting with v1.34.0, normal Windows builds use the real `d3d11` backend to
+draw cells, glyphs, emoji, UI, images, and render targets directly with
+Direct3D 11. The separately built OpenGL package retains the older
+OpenGL-to-DXGI compatibility path.
 
-## Current Branch Status
+## Current Status
+
+Phase VI is complete in v1.34.0: Windows `auto` selects D3D11, the default and
+compat portable packages are native D3D11 builds, and
+`wispterm-windows-portable-opengl-*.zip` is the published renderer fallback.
+Backend selection remains compile-time, so fallback requires restarting with
+the OpenGL package rather than switching in-process.
+
+### Historical Phase IV/V Branch Record
 
 On the `windows-native-render` integration branch, the opt-in D3D11 backend is a
 real native renderer path, not merely OpenGL frames presented through DXGI. The
@@ -172,10 +179,9 @@ marker in the isolated smoke profile and verify marker persistence plus the
 explicit/current-auto/future-auto decision surface without triggering automatic
 fallback.
 
-Add `-AutoDryRunSmoke` to the normal-session smoke to verify the future-auto
-selector explanation surface without writing a marker. It must prove current
-Windows `auto` still selects OpenGL, future Windows `auto` would select D3D11
-when eligible, a matching marker would make future-auto select OpenGL, explicit
+Add `-AutoDryRunSmoke` to the normal-session smoke to verify the selector
+explanation surface without writing a marker. It must prove current Windows
+`auto` selects D3D11, the marker-aware branch selects OpenGL when applicable, explicit
 `d3d11` ignores the marker with warning semantics, explicit `opengl` remains
 OpenGL, and stale markers are ignored.
 
@@ -282,21 +288,21 @@ Windows implementation is WispTerm-specific.
    assistant UI, image preview, and background rendering should build geometry
    and issue backend-neutral draw calls.
 5. **Fallback is part of the design.** If the D3D11 backend fails bring-up,
-   loses its device, or hits a known-bad environment, Windows can fall back to
-   the current OpenGL + DXGI present path for that launch.
+   loses its device, or hits a known-bad environment, users can restart with
+   the separately published OpenGL + DXGI compatibility package.
 
-## Phase 0: Current Windows Present Baseline
+## Phase 0: Historical Windows Present Baseline
 
 Status: mostly done.
 
-The current Windows host creates an OpenGL context and, by default, presents via
+The original Windows host created an OpenGL context and presented via
 `src/apprt/win32_dx_present.zig`: OpenGL renders into FBO 0, WGL/DX interop
 copies into a shared D3D11 texture, and DXGI presents a flip-model swapchain.
 This solved several GDI `SwapBuffers` resize, DPI, and black-region issues while
 preserving the existing renderer.
 
-Keep this path working while D3D11 is developed. It is the fallback and the
-regression oracle for visual parity.
+This path remains the separately built fallback and regression oracle for
+visual parity.
 
 Deliverables:
 
@@ -431,8 +437,8 @@ Exit criteria:
 
 ## Phase 6: Default Migration
 
-Only switch the Windows default after D3D11 has feature parity and fallback
-coverage.
+**Status: complete in v1.34.0.** Windows defaults to D3D11 and the OpenGL
+fallback remains separately published.
 
 Deliverables:
 

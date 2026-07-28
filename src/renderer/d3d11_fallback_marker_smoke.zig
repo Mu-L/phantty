@@ -2,8 +2,7 @@
 //!
 //! Enable with `WISPTERM_D3D11_FALLBACK_MARKER_SMOKE=1`. This writes a
 //! synthetic next-launch fallback marker into the isolated state file used by
-//! the smoke harness, then verifies the current/future selector decisions. It
-//! does not change the current Windows `auto` default and does not trigger
+//! the smoke harness, then verifies the selector decisions. It does not trigger
 //! automatic fallback.
 
 const std = @import("std");
@@ -82,7 +81,7 @@ fn evaluateDecisions(marker_text: []const u8, version: []const u8, adapter_id: [
         .explicit_d3d11_ignored = explicit_d3d11.backend == .d3d11 and
             explicit_d3d11.effect == .explicit_d3d11_ignores_marker and
             explicit_d3d11.warning,
-        .current_auto_default_unchanged = current_auto.backend == Backend.opengl and
+        .current_auto_default_unchanged = current_auto.backend == Backend.d3d11 and
             current_auto.effect == .current_auto_default_unchanged,
         .future_auto_opengl_marker = future_auto.backend == Backend.opengl and
             future_auto.effect == .future_auto_opengl_marker,

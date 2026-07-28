@@ -1,6 +1,6 @@
 //! GPU backend selection. Mirrors Ghostty's `src/renderer/backend.zig`:
-//! a `Backend` enum with `default(os_tag)` that returns `.metal` on Darwin,
-//! `.opengl` elsewhere. Windows-native D3D11 is opt-in during Phase II.
+//! a `Backend` enum with `default(os_tag)` that keeps the platform choice thin:
+//! Metal on Darwin, D3D11 on Windows, and OpenGL elsewhere.
 //! Selection is comptime (see `gpu.zig`).
 
 const std = @import("std");
@@ -10,12 +10,11 @@ pub const Backend = enum {
     metal,
     d3d11,
 
-    /// The default backend for a target OS. macOS/iOS are Metal-only
-    /// (Apple deprecated OpenGL at 4.1); everything else uses OpenGL while
-    /// the D3D11 backend is experimental.
+    /// The default backend for a target OS.
     pub fn default(os_tag: std.Target.Os.Tag) Backend {
         return switch (os_tag) {
             .macos, .ios => .metal,
+            .windows => .d3d11,
             else => .opengl,
         };
     }
@@ -35,15 +34,15 @@ pub const Backend = enum {
     }
 };
 
-test "Backend.default maps Darwin to metal, others to opengl while d3d11 is opt-in" {
+test "Backend.default maps each desktop family to its native default" {
     try std.testing.expectEqual(Backend.metal, Backend.default(.macos));
     try std.testing.expectEqual(Backend.metal, Backend.default(.ios));
-    try std.testing.expectEqual(Backend.opengl, Backend.default(.windows));
+    try std.testing.expectEqual(Backend.d3d11, Backend.default(.windows));
     try std.testing.expectEqual(Backend.opengl, Backend.default(.linux));
 }
 
-test "Backend.resolve honors explicit d3d11 without changing auto defaults" {
-    try std.testing.expectEqual(Backend.opengl, Backend.resolve(.windows, "auto"));
+test "Backend.resolve honors auto and explicit overrides" {
+    try std.testing.expectEqual(Backend.d3d11, Backend.resolve(.windows, "auto"));
     try std.testing.expectEqual(Backend.metal, Backend.resolve(.macos, "auto"));
     try std.testing.expectEqual(Backend.d3d11, Backend.resolve(.windows, "d3d11"));
     try std.testing.expectEqual(Backend.opengl, Backend.resolve(.windows, "opengl"));

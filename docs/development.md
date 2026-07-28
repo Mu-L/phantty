@@ -83,9 +83,9 @@ frozen ceilings are in [`../AGENTS.md`](../AGENTS.md) and
 
 WispTerm's main terminal UI is intentionally custom drawn instead of composed
 from raw Win32 controls. The terminal surface, tabs, splits, overlays,
-background image, shader effects, and theme colors all share one OpenGL
-rendering pipeline, so they can stay visually consistent and behave like one
-terminal canvas.
+background image, shader effects, and theme colors all share one GPU rendering
+pipeline (D3D11 on Windows, Metal on macOS, OpenGL on Linux), so
+they can stay visually consistent and behave like one terminal canvas.
 
 Classic Win32 controls such as `SCROLLBAR` provide native behavior, but they do
 not blend well with WispTerm's dark theme, transparency, background images, and
@@ -360,18 +360,18 @@ survives with nonblank frames, D3D11 resize diagnostics, and no present/resize
 failure lines. It is Phase V reliability evidence only; it does not change the
 Windows default backend or fallback policy.
 
-The Phase VI default migration gate is documented in
+The completed Phase VI default migration gate is documented in
 [windows-native-d3d11-default-gate.md](windows-native-d3d11-default-gate.md).
 Use it as the checklist for collecting evidence, recording matrix gaps, and
-keeping the eventual Windows `auto` default change small and revertible.
+keeping the Windows `auto` default change small and revertible.
 
 D3D11 fallback is a next-launch policy while the renderer backend remains a
 comptime selection. Do not implement same-process D3D11-to-OpenGL switching
 without first changing the backend architecture. The `d3d11-fallback` state-file
 marker is separate from the older OpenGL+DXGI present `d3d-bringup` fuse,
-scoped by app version and adapter identity, and currently feeds only tests and
-future-auto dry-run decisions. Explicit `d3d11` must ignore a matching marker
-except for diagnostics; current Windows `auto` still resolves to OpenGL.
+scoped by app version and adapter identity, and currently feeds only diagnostic
+selector tests. Explicit `d3d11` must ignore a matching marker except for
+diagnostics; current Windows `auto` resolves to D3D11.
 
 To exercise the marker path without changing selection, run:
 
@@ -383,7 +383,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\test-d3d11-normal-se
 This sets `WISPTERM_D3D11_FALLBACK_MARKER_SMOKE=1`, writes a synthetic
 version+adapter-scoped `d3d11-fallback` marker into the smoke profile's isolated
 state file, verifies explicit `d3d11` still wins with a warning-class decision,
-verifies current Windows `auto` remains OpenGL, and verifies a future-auto
+verifies current Windows `auto` remains D3D11, and verifies the marker-aware
 dry-run would select OpenGL from the marker. It does not enable live failure
 writes or automatic fallback.
 
@@ -396,17 +396,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\test-d3d11-normal-se
 ```
 
 This sets `WISPTERM_D3D11_AUTO_DRY_RUN_SMOKE=1` and verifies diagnostics for
-current Windows `auto` staying OpenGL, future Windows `auto` selecting D3D11
-when eligible, future-auto selecting OpenGL from a matching marker, explicit
+current Windows `auto` selecting D3D11, the marker-aware policy selecting D3D11
+when eligible and OpenGL from a matching marker, explicit
 `d3d11` ignoring a matching marker with warning semantics, explicit `opengl`
 remaining OpenGL, and stale markers being ignored. It does not change the
 Windows default backend, write a fallback marker, or trigger automatic fallback.
 
 To prove the Windows OpenGL fallback path still runs the same normal-session UI
-subset on the native-render branch, build the default backend and run:
+subset, build it explicitly and run:
 
 ```powershell
-zig build
+zig build -Dgpu-backend=opengl
 powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\test-d3d11-normal-session.ps1 -Backend opengl
 ```
 
@@ -531,9 +531,9 @@ OpenSSH error so regressions can be diagnosed without guessing.
 
 WispTerm supports three portable Windows packages:
 
-- `portable` - default OpenGL portable build, run directly without installation
-- `portable-compat` - OpenGL portable build for older Windows 10 machines: `WebView2Loader.dll` for the embedded browser plus a bundled modern ConPTY (`conpty.dll` + `OpenConsole.exe`) so TUI apps like Codex get mouse scrolling and scrollbars on old inbox conhosts
-- `portable-native-d3d11` - Windows native D3D11 feedback build; use the default `portable` package if it shows rendering issues
+- `portable` - default native D3D11 build, run directly without installation
+- `portable-compat` - native D3D11 build for older Windows 10 machines: `WebView2Loader.dll` for the embedded browser plus a bundled modern ConPTY (`conpty.dll` + `OpenConsole.exe`) so TUI apps like Codex get mouse scrolling and scrollbars on old inbox conhosts
+- `portable-opengl` - renderer fallback for systems where native D3D11 cannot start or render correctly
 
 Build the artifacts with:
 
@@ -553,9 +553,9 @@ zig-out\dist\portable-compat\conpty.dll
 zig-out\dist\portable-compat\OpenConsole.exe
 zig-out\dist\portable-compat\version.txt
 zig-out\dist\portable-compat\plugins\...
-zig-out\dist\portable-native-d3d11\wispterm.exe
-zig-out\dist\portable-native-d3d11\version.txt
-zig-out\dist\portable-native-d3d11\plugins\...
+zig-out\dist\portable-opengl\wispterm.exe
+zig-out\dist\portable-opengl\version.txt
+zig-out\dist\portable-opengl\plugins\...
 ```
 
 The portable app can add or remove its native Start menu shortcut and enable or
@@ -597,7 +597,7 @@ Several GitHub Actions workflows publish release assets whenever a tag matching
 
 - `wispterm-windows-portable-vX.Y.Z.zip`
 - `wispterm-windows-portable-compat-vX.Y.Z.zip`
-- `wispterm-windows-portable-native-d3d11-vX.Y.Z.zip`
+- `wispterm-windows-portable-opengl-vX.Y.Z.zip`
 - `wispterm-windows-debug-vX.Y.Z.zip`
 
 When WispTerm detects a newer release on Windows, it downloads the matching
@@ -607,10 +607,9 @@ your existing install to update.
 WispTerm does not build or publish a Windows installer. Use the default portable
 zip release asset; the `portable-compat` zip when using the embedded browser panel
 or on older Windows 10 machines (its bundled ConPTY restores TUI mouse support);
-or the `portable-native-d3d11` zip when intentionally testing the Windows native
-D3D11 renderer. If the native D3D11 package shows a black window, crash, missing
-UI, resize failure, RDP issue, or multi-monitor/DPI issue, switch back to the
-default portable package and include diagnostics in the bug report. The bundled
+or the `portable-opengl` zip when the default native D3D11 renderer shows a
+black window, crash, missing UI, resize failure, RDP issue, or multi-monitor/DPI
+issue. Include diagnostics in the bug report. The bundled
 ConPTY is preferred automatically when its files sit next to `wispterm.exe`; set
 `windows-conpty = system` in the config to force the OS inbox ConPTY.
 

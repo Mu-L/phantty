@@ -1408,7 +1408,7 @@ try {
     $hasD3D11RecreateSucceeded = $diagText -match "gpu-backend=d3d11 recovery recreate attempt attempted=true succeeded=true"
     $hasD3D11ResourceRestore = $diagText -match "gpu-backend=d3d11 resource recreate restored"
     $hasD3D11FallbackMarkerSmoke = $diagText -match "d3d11-fallback-marker-smoke .*readback_ok=true.*readback_matches=true.*explicit_d3d11_ignored=true.*current_auto_default_unchanged=true.*future_auto_opengl_marker=true.*automatic_fallback=false.*default_unchanged=true"
-    $hasD3D11AutoDryRunSmoke = $diagText -match "d3d11-auto-dry-run-smoke .*current_auto_opengl=true.*future_auto_d3d11=true.*future_auto_marker_opengl=true.*explicit_d3d11_ignored_marker=true.*explicit_opengl=true.*stale_marker_ignored=true.*automatic_fallback=false.*default_unchanged=true"
+    $hasD3D11AutoDryRunSmoke = $diagText -match "d3d11-auto-dry-run-smoke .*current_auto_d3d11=true.*future_auto_d3d11=true.*future_auto_marker_opengl=true.*explicit_d3d11_ignored_marker=true.*explicit_opengl=true.*stale_marker_ignored=true.*automatic_fallback=false.*default_unchanged=true"
     $hasUiProbe = $diagText -match "d3d11-ui-smoke probe .* ok=true"
     $hasOffscreen = $diagText -match "d3d11-offscreen-smoke round-trip active"
     $d3d11ResizeEventCount = [regex]::Matches($diagText, "gpu-backend=d3d11 resized swapchain to").Count

@@ -41,6 +41,10 @@ test("latestDownloadKey maps public latest download URLs to R2 keys", () => {
     "latest/wispterm-windows-portable.zip",
   );
   assert.equal(
+    latestDownloadKey("/downloads/latest/wispterm-windows-portable-opengl.zip"),
+    "latest/wispterm-windows-portable-opengl.zip",
+  );
+  assert.equal(
     latestDownloadKey("/downloads/latest/wispterm-linux-x86_64.AppImage"),
     "latest/wispterm-linux-x86_64.AppImage",
   );

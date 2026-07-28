@@ -432,10 +432,13 @@ test "update_check: selects supported Windows portable assets" {
     const tag_name = "v0.28.0";
     var portable_name_buf: [asset_name_buffer_len]u8 = undefined;
     var compat_name_buf: [asset_name_buffer_len]u8 = undefined;
+    var opengl_name_buf: [asset_name_buffer_len]u8 = undefined;
     const portable_package = platform_update_package.packageForScenario(.baseline);
     const compat_package = platform_update_package.packageForScenario(.compat);
+    const opengl_package = platform_update_package.packageForScenario(.opengl);
     const portable_name = try platform_update_package.assetName(tag_name, portable_package, &portable_name_buf);
     const compat_name = try platform_update_package.assetName(tag_name, compat_package, &compat_name_buf);
+    const opengl_name = try platform_update_package.assetName(tag_name, opengl_package, &opengl_name_buf);
 
     const json = try std.fmt.allocPrint(std.testing.allocator,
         \\{{
@@ -445,7 +448,8 @@ test "update_check: selects supported Windows portable assets" {
         \\  "prerelease":false,
         \\  "assets":[
         \\    {{"name":"{s}","browser_download_url":"https://example.test/portable.zip","size":11}},
-        \\    {{"name":"{s}","browser_download_url":"https://example.test/compat.zip","size":22}}
+        \\    {{"name":"{s}","browser_download_url":"https://example.test/compat.zip","size":22}},
+        \\    {{"name":"{s}","browser_download_url":"https://example.test/opengl.zip","size":33}}
         \\  ]
         \\}}
     , .{
@@ -453,6 +457,7 @@ test "update_check: selects supported Windows portable assets" {
         tag_name,
         portable_name,
         compat_name,
+        opengl_name,
     });
     defer std.testing.allocator.free(json);
 
@@ -468,6 +473,11 @@ test "update_check: selects supported Windows portable assets" {
     try std.testing.expectEqualStrings(compat_name, compat.name);
     try std.testing.expectEqualStrings("https://example.test/compat.zip", compat.download_url);
     try std.testing.expectEqual(@as(u64, 22), compat.size);
+
+    const opengl = selectReleaseAsset(release, opengl_package) orelse return error.ExpectedAsset;
+    try std.testing.expectEqualStrings(opengl_name, opengl.name);
+    try std.testing.expectEqualStrings("https://example.test/opengl.zip", opengl.download_url);
+    try std.testing.expectEqual(@as(u64, 33), opengl.size);
 }
 
 test "update_check: selects macOS DMG asset for macOS package" {

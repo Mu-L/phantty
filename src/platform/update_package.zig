@@ -30,8 +30,13 @@ const impl = switch (backendForOs(builtin.os.tag)) {
     .unsupported => @import("update_package_unsupported.zig"),
 };
 
-fn runtimeFlavor(webview_enabled: bool, has_compat_payload: bool) release_package.Flavor {
+fn runtimeFlavor(
+    gpu_backend: []const u8,
+    webview_enabled: bool,
+    has_compat_payload: bool,
+) release_package.Flavor {
     _ = webview_enabled;
+    if (std.mem.eql(u8, gpu_backend, "opengl")) return .opengl;
     if (has_compat_payload) return .compat;
     return .baseline;
 }
@@ -81,23 +86,32 @@ pub fn defaultPackage() release_package.Package {
 
 pub fn runtimePackageForOs(
     os_tag: std.Target.Os.Tag,
+    gpu_backend: []const u8,
     webview_enabled: bool,
     has_compat_payload: bool,
 ) release_package.Package {
     return switch (backendForOs(os_tag)) {
-        .windows => release_package.Package.init(.windows, runtimeFlavor(webview_enabled, has_compat_payload)),
+        .windows => release_package.Package.init(.windows, runtimeFlavor(gpu_backend, webview_enabled, has_compat_payload)),
         .linux => defaultPackageForOs(os_tag),
         .macos => defaultPackageForOs(os_tag),
         .unsupported => defaultPackageForOs(os_tag),
     };
 }
 
-pub fn runtimePackage(webview_enabled: bool, has_compat_payload: bool) release_package.Package {
-    return runtimePackageForOs(builtin.os.tag, webview_enabled, has_compat_payload);
+pub fn runtimePackage(
+    gpu_backend: []const u8,
+    webview_enabled: bool,
+    has_compat_payload: bool,
+) release_package.Package {
+    return runtimePackageForOs(builtin.os.tag, gpu_backend, webview_enabled, has_compat_payload);
 }
 
-pub fn currentPackage(allocator: std.mem.Allocator, webview_enabled: bool) !release_package.Package {
-    return impl.currentPackage(allocator, webview_enabled);
+pub fn currentPackage(
+    allocator: std.mem.Allocator,
+    webview_enabled: bool,
+    gpu_backend: []const u8,
+) !release_package.Package {
+    return impl.currentPackage(allocator, webview_enabled, gpu_backend);
 }
 
 test "platform update package selects backend by target OS" {
@@ -114,10 +128,12 @@ test "platform update package maps non-Windows targets to non-Windows packages" 
 }
 
 test "platform update package maps Windows runtime payloads after no-WebView retirement" {
-    try std.testing.expectEqual(release_package.Flavor.baseline, runtimeFlavor(false, false));
-    try std.testing.expectEqual(release_package.Flavor.compat, runtimeFlavor(false, true));
-    try std.testing.expectEqual(release_package.Flavor.compat, runtimeFlavor(true, true));
-    try std.testing.expectEqual(release_package.Flavor.baseline, runtimeFlavor(true, false));
+    try std.testing.expectEqual(release_package.Flavor.baseline, runtimeFlavor("d3d11", false, false));
+    try std.testing.expectEqual(release_package.Flavor.compat, runtimeFlavor("d3d11", false, true));
+    try std.testing.expectEqual(release_package.Flavor.compat, runtimeFlavor("d3d11", true, true));
+    try std.testing.expectEqual(release_package.Flavor.baseline, runtimeFlavor("d3d11", true, false));
+    try std.testing.expectEqual(release_package.Flavor.opengl, runtimeFlavor("opengl", true, false));
+    try std.testing.expectEqual(release_package.Flavor.opengl, runtimeFlavor("opengl", true, true));
     try std.testing.expect(release_package.Package.init(.windows, .compat).requiresEmbeddedBrowserPayload());
 }
 
@@ -128,6 +144,9 @@ test "platform update package builds Windows portable asset names" {
 
     const compat = try assetNameForScenario("v0.28.0", .compat, &buf);
     try std.testing.expectEqualStrings("wispterm-windows-portable-compat-v0.28.0.zip", compat);
+
+    const opengl = try assetNameForScenario("v0.28.0", .opengl, &buf);
+    try std.testing.expectEqualStrings("wispterm-windows-portable-opengl-v0.28.0.zip", opengl);
 }
 
 test "platform update package matches exact target asset names only" {
@@ -140,6 +159,16 @@ test "platform update package matches exact target asset names only" {
         "wispterm-windows-portable-v0.28.0.zip",
         "v0.28.0",
         packageForScenario(.compat),
+    ));
+    try std.testing.expect(matchesAssetName(
+        "wispterm-windows-portable-opengl-v0.28.0.zip",
+        "v0.28.0",
+        packageForScenario(.opengl),
+    ));
+    try std.testing.expect(!matchesAssetName(
+        "wispterm-windows-portable-v0.28.0.zip",
+        "v0.28.0",
+        packageForScenario(.opengl),
     ));
 }
 

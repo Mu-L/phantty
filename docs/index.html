@@ -179,14 +179,20 @@ nothing to commit, working tree clean
           <div class="install-card">
             <span class="badge">Windows · Recommended</span>
             <h3>Portable</h3>
-            <p>Single executable — download the zip, extract, and run <code>wispterm.exe</code>.</p>
+            <p>Native Direct3D 11 renderer — download the zip, extract, and run <code>wispterm.exe</code>.</p>
             <a class="cta primary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable.zip" target="_blank" rel="noopener">Download zip →</a>
           </div>
           <div class="install-card">
             <span class="badge">Windows · Compatibility</span>
             <h3>Portable compat</h3>
-            <p>OpenGL build with <code>WebView2Loader.dll</code> and a bundled modern ConPTY for older Windows 10 machines.</p>
+            <p>Native Direct3D 11 build with <code>WebView2Loader.dll</code> and a bundled modern ConPTY for older Windows 10 machines.</p>
             <a class="cta primary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable-compat.zip" target="_blank" rel="noopener">Download zip →</a>
+          </div>
+          <div class="install-card">
+            <span class="badge">Windows · Renderer fallback</span>
+            <h3>Portable OpenGL</h3>
+            <p>Use this fallback if the recommended native D3D11 build opens black, crashes, or renders incorrectly.</p>
+            <a class="cta secondary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable-opengl.zip" target="_blank" rel="noopener">Download fallback →</a>
           </div>
           <div class="install-card">
             <span class="badge">macOS · Beta</span>
@@ -349,7 +355,7 @@ __wispterm_report_cwd</code></pre>
           </div>
           <div class="feature">
             <h3>First launch opens a black window?</h3>
-            <p>On weak integrated-GPU machines, close all WispTerm windows and start it again; the next launch should use the recorded GDI fallback. If it still opens black, add <code>wispterm-d3d-present = false</code> to <code>%APPDATA%\wispterm\config</code> and reopen WispTerm.</p>
+            <p>Close all WispTerm windows and use the Portable OpenGL fallback package. Renderer backends are fixed at build time, so the native D3D11 executable cannot switch itself to OpenGL.</p>
           </div>
           <div class="feature">
             <h3>Can I switch AI models without starting over?</h3>
