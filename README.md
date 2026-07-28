@@ -151,7 +151,7 @@ Use `keybind = clear` before custom bindings if you want to remove all defaults 
 | Close focused panel, tab, or window | **Ctrl+Shift+W** | **Cmd+W** |
 | Maximize or restore window | **Alt+Enter** | **Opt+Enter** |
 | Increase / decrease font size | **Ctrl++** / **Ctrl+-** | **Cmd++** / **Cmd+-** |
-| Copy terminal selection or AI Chat selection/transcript | **Ctrl+Shift+C** | **Cmd+Shift+C** |
+| Copy terminal selection or AI Chat selection/transcript | **Ctrl+Shift+C** | **Cmd+C** |
 | Select from the last terminal click anchor | Shift-click terminal text | Shift-click terminal text |
 | Select terminal text while tmux mouse mode is enabled | **Shift-drag** | **Shift-drag** |
 | Select part of an AI answer | Drag AI answer text | Drag AI answer text |
