@@ -37,5 +37,8 @@ jobs:
       - name: Build Cloudflare docs
         run: npm run build:cloudflare
 
+      - name: Prepare Wrangler config
+        run: cp wrangler.toml.example wrangler.toml
+
       - name: Deploy Worker
         run: npx --yes wrangler@4.88.0 deploy --config wrangler.toml
