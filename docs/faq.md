@@ -88,12 +88,12 @@ right-click-action = copy-or-paste
 These shortcuts operate on the local system clipboard. tmux's own copy-mode
 buffer remains separate unless tmux is configured to synchronize it.
 
-## Why Is WispTerm Laggy or Black on a Low-Spec PC (Weak Integrated GPU)?
+## Why Is the OpenGL Fallback Laggy or Black on a Low-Spec PC?
 
-On Windows, WispTerm presents frames through a DXGI flip-model swapchain by
-default. On machines with a weak integrated GPU — typically Win11
-thin-and-light laptops — that path can be noticeably slow (v1.18.0), and
-v1.19.0 could even leave the window black.
+This section applies to the separately published OpenGL fallback package. Its
+OpenGL renderer normally presents frames through a DXGI flip-model swapchain.
+On machines with a weak integrated GPU, that path can be noticeably slow or
+leave the window black.
 
 Since v1.19.1 WispTerm detects a sustained-slow or broken present path on its
 own: the first launch after upgrading may still feel slow once, and from the
@@ -104,13 +104,13 @@ at any time, set `wispterm-d3d-present = false`.
 
 ## What Should I Do If the First Launch Opens a Black Window?
 
-On weak integrated-GPU machines, the first launch after installing or upgrading
-can still hit the DXGI bring-up path before WispTerm has learned that the
-machine needs the GDI fallback. Close all WispTerm windows and start it again;
-the next launch should use the recorded fallback path.
+Starting with v1.34.0, first close all WispTerm windows and replace the default
+package with `wispterm-windows-portable-opengl-*.zip`. Renderer backends are
+fixed at build time, so the running native D3D11 binary cannot switch itself to
+OpenGL.
 
-If it still opens black, disable the DXGI presenter manually. Create or edit
-`%APPDATA%\wispterm\config` and add:
+If the OpenGL fallback also opens black, disable its DXGI presenter. Create or
+edit `%APPDATA%\wispterm\config` and add:
 
 ```conf
 wispterm-d3d-present = false
@@ -126,19 +126,19 @@ Add-Content -Path "$env:APPDATA\wispterm\config" -Value "wispterm-d3d-present = 
 
 ## Which Windows Package Should I Download?
 
-Use `wispterm-windows-portable-*.zip` by default. It uses the OpenGL renderer
-and is the recommended Windows package.
+Use `wispterm-windows-portable-*.zip` by default. Starting with v1.34.0 it uses
+the native Direct3D 11 renderer and is the recommended Windows package.
 
 Use `wispterm-windows-portable-compat-*.zip` on older Windows 10 machines or
 when you want the embedded browser loader and bundled modern ConPTY next to the
 exe.
 
-Use `wispterm-windows-portable-native-d3d11-*.zip` only when you want to test
-the Windows native D3D11 renderer and send feedback. If it opens a black window,
-crashes, misses UI, fails resize, or behaves badly over RDP, VM, hybrid GPU, or
-mixed-DPI monitor setups, switch back to the default OpenGL package. Include a
+Use `wispterm-windows-portable-opengl-*.zip` as the renderer fallback. Choose it
+if the default build opens a black window, crashes, misses UI, fails resize, or
+behaves badly over RDP, VM, hybrid GPU, or mixed-DPI monitor setups. Include a
 diagnostic report plus GPU/driver, Windows version, RDP/VM status, hybrid-GPU
-status, and monitor/DPI topology when reporting the issue.
+status, and monitor/DPI topology when reporting the issue. The OpenGL package
+tracks its own OpenGL release asset during in-app updates.
 
 ## Why Does WispTerm Remote Mirror the Local Terminal Size on Phones?
 

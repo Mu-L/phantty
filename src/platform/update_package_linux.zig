@@ -14,9 +14,14 @@ fn versionFromTag(tag_name: []const u8) []const u8 {
     return tag_name;
 }
 
-pub fn currentPackage(allocator: std.mem.Allocator, webview_enabled: bool) !release_package.Package {
+pub fn currentPackage(
+    allocator: std.mem.Allocator,
+    webview_enabled: bool,
+    gpu_backend: []const u8,
+) !release_package.Package {
     _ = allocator;
     _ = webview_enabled;
+    _ = gpu_backend;
     if (architectureLabel(builtin.cpu.arch) == null) return error.UnsupportedLinuxArchitecture;
     return .{ .platform = .linux };
 }

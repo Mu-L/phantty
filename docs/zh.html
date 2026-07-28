@@ -179,14 +179,20 @@
           <div class="install-card">
             <span class="badge">Windows · 推荐</span>
             <h3>便携版</h3>
-            <p>单可执行文件——下载 zip，解压后直接运行 <code>wispterm.exe</code>。</p>
+            <p>使用原生 Direct3D 11 渲染器——下载 zip，解压后直接运行 <code>wispterm.exe</code>。</p>
             <a class="cta primary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable.zip" target="_blank" rel="noopener">下载 zip →</a>
           </div>
           <div class="install-card">
             <span class="badge">Windows · 兼容包</span>
             <h3>便携兼容版</h3>
-            <p>OpenGL 构建，额外捆绑 <code>WebView2Loader.dll</code> 和现代 ConPTY，面向旧版 Windows 10。</p>
+            <p>原生 Direct3D 11 构建，额外捆绑 <code>WebView2Loader.dll</code> 和现代 ConPTY，面向旧版 Windows 10。</p>
             <a class="cta primary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable-compat.zip" target="_blank" rel="noopener">下载 zip →</a>
+          </div>
+          <div class="install-card">
+            <span class="badge">Windows · 渲染兜底</span>
+            <h3>OpenGL 便携版</h3>
+            <p>如果推荐的原生 D3D11 构建出现黑屏、崩溃或显示异常，请改用此兜底包。</p>
+            <a class="cta secondary small" href="https://github.com/xuzhougeng/wispterm/releases/latest" data-cloudflare-download="/downloads/latest/wispterm-windows-portable-opengl.zip" target="_blank" rel="noopener">下载兜底包 →</a>
           </div>
           <div class="install-card">
             <span class="badge">macOS · Beta</span>
@@ -349,7 +355,7 @@ __wispterm_report_cwd</code></pre>
           </div>
           <div class="feature">
             <h3>第一次启动黑屏怎么办？</h3>
-            <p>弱核显机器上，先关闭所有 WispTerm 窗口并重新打开；下一次启动通常会使用已记录的 GDI 回退路径。如果仍然黑屏，请在 <code>%APPDATA%\wispterm\config</code> 中加入 <code>wispterm-d3d-present = false</code>，然后重新打开 WispTerm。</p>
+            <p>关闭所有 WispTerm 窗口，改用 OpenGL 便携兜底包。渲染器在构建时确定，原生 D3D11 可执行文件无法自行切换到 OpenGL。</p>
           </div>
           <div class="feature">
             <h3>可以不中断会话切换 AI 模型吗？</h3>

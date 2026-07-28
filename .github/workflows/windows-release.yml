@@ -88,9 +88,9 @@ jobs:
           $portableCompatConPty = "zig-out\dist\portable-compat\conpty.dll"
           $portableCompatConsoleHost = "zig-out\dist\portable-compat\OpenConsole.exe"
           $portableCompatPluginSkills = "zig-out\dist\portable-compat\plugins\skills"
-          $portableNativeD3D11Exe = "zig-out\dist\portable-native-d3d11\wispterm.exe"
-          $portableNativeD3D11Version = "zig-out\dist\portable-native-d3d11\version.txt"
-          $portableNativeD3D11PluginSkills = "zig-out\dist\portable-native-d3d11\plugins\skills"
+          $portableOpenGLExe = "zig-out\dist\portable-opengl\wispterm.exe"
+          $portableOpenGLVersion = "zig-out\dist\portable-opengl\version.txt"
+          $portableOpenGLPluginSkills = "zig-out\dist\portable-opengl\plugins\skills"
           $skillFiles = @(
             "plugins\skills\inspect-computer-config\SKILL.md",
             "plugins\skills\inspect-computer-config\scripts\inspect_computer_config.py"
@@ -132,19 +132,19 @@ jobs:
             throw "Portable compat plugin skills directory not found: $portableCompatPluginSkills"
           }
 
-          if (!(Test-Path $portableNativeD3D11Exe)) {
-            throw "Portable native D3D11 executable not found: $portableNativeD3D11Exe"
+          if (!(Test-Path $portableOpenGLExe)) {
+            throw "Portable OpenGL fallback executable not found: $portableOpenGLExe"
           }
 
-          if (!(Test-Path $portableNativeD3D11Version)) {
-            throw "Portable native D3D11 version file not found: $portableNativeD3D11Version"
+          if (!(Test-Path $portableOpenGLVersion)) {
+            throw "Portable OpenGL fallback version file not found: $portableOpenGLVersion"
           }
 
-          if (!(Test-Path $portableNativeD3D11PluginSkills -PathType Container)) {
-            throw "Portable native D3D11 plugin skills directory not found: $portableNativeD3D11PluginSkills"
+          if (!(Test-Path $portableOpenGLPluginSkills -PathType Container)) {
+            throw "Portable OpenGL fallback plugin skills directory not found: $portableOpenGLPluginSkills"
           }
 
-          foreach ($distDir in @("zig-out\dist\portable", "zig-out\dist\portable-compat", "zig-out\dist\portable-native-d3d11")) {
+          foreach ($distDir in @("zig-out\dist\portable", "zig-out\dist\portable-compat", "zig-out\dist\portable-opengl")) {
             foreach ($skillFile in $skillFiles) {
               $path = Join-Path $distDir $skillFile
               if (!(Test-Path $path)) {
@@ -169,7 +169,7 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $portableAsset = "wispterm-windows-portable-$tag.zip"
           $portableCompatAsset = "wispterm-windows-portable-compat-$tag.zip"
-          $portableNativeD3D11Asset = "wispterm-windows-portable-native-d3d11-$tag.zip"
+          $portableOpenGLAsset = "wispterm-windows-portable-opengl-$tag.zip"
           $debugAsset = "wispterm-windows-debug-$tag.zip"
 
           if (Test-Path $portableAsset) {
@@ -178,14 +178,14 @@ jobs:
           if (Test-Path $portableCompatAsset) {
             Remove-Item $portableCompatAsset -Force
           }
-          if (Test-Path $portableNativeD3D11Asset) {
-            Remove-Item $portableNativeD3D11Asset -Force
+          if (Test-Path $portableOpenGLAsset) {
+            Remove-Item $portableOpenGLAsset -Force
           }
           if (Test-Path $debugAsset) { Remove-Item $debugAsset -Force }
 
           Compress-Archive -Path zig-out\dist\portable\* -DestinationPath $portableAsset -Force
           Compress-Archive -Path zig-out\dist\portable-compat\* -DestinationPath $portableCompatAsset -Force
-          Compress-Archive -Path zig-out\dist\portable-native-d3d11\* -DestinationPath $portableNativeD3D11Asset -Force
+          Compress-Archive -Path zig-out\dist\portable-opengl\* -DestinationPath $portableOpenGLAsset -Force
           Compress-Archive -Path zig-out\dist\portable-debug\* -DestinationPath $debugAsset -Force
 
       - name: Upload portable artifact
@@ -202,11 +202,11 @@ jobs:
           path: wispterm-windows-portable-compat-${{ github.ref_name }}.zip
           if-no-files-found: error
 
-      - name: Upload portable native D3D11 artifact
+      - name: Upload portable OpenGL fallback artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wispterm-windows-portable-native-d3d11-${{ github.ref_name }}
-          path: wispterm-windows-portable-native-d3d11-${{ github.ref_name }}.zip
+          name: wispterm-windows-portable-opengl-${{ github.ref_name }}
+          path: wispterm-windows-portable-opengl-${{ github.ref_name }}.zip
           if-no-files-found: error
 
       - name: Upload diagnostic artifact
@@ -224,7 +224,7 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $portableAsset = "wispterm-windows-portable-$tag.zip"
           $portableCompatAsset = "wispterm-windows-portable-compat-$tag.zip"
-          $portableNativeD3D11Asset = "wispterm-windows-portable-native-d3d11-$tag.zip"
+          $portableOpenGLAsset = "wispterm-windows-portable-opengl-$tag.zip"
           $debugAsset = "wispterm-windows-debug-$tag.zip"
 
           if (!(Test-Path $portableAsset)) {
@@ -233,8 +233,8 @@ jobs:
           if (!(Test-Path $portableCompatAsset)) {
             throw "Portable compat release asset not found: $portableCompatAsset"
           }
-          if (!(Test-Path $portableNativeD3D11Asset)) {
-            throw "Portable native D3D11 release asset not found: $portableNativeD3D11Asset"
+          if (!(Test-Path $portableOpenGLAsset)) {
+            throw "Portable OpenGL fallback release asset not found: $portableOpenGLAsset"
           }
           if (!(Test-Path $debugAsset)) {
             throw "Diagnostic release asset not found: $debugAsset"
@@ -242,14 +242,14 @@ jobs:
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $portableAsset $portableCompatAsset $portableNativeD3D11Asset $debugAsset --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag $portableAsset $portableCompatAsset $portableOpenGLAsset $debugAsset --repo $env:GITHUB_REPOSITORY --clobber
           } else {
             $assetNotes = @(
               "Windows assets included in this release:",
               "",
-              "- Portable: default OpenGL zip archive containing wispterm.exe",
-              "- Portable compat: OpenGL zip archive for older Windows 10 machines - bundles WebView2Loader.dll for the embedded browser plus a modern ConPTY (conpty.dll + OpenConsole.exe) so TUI apps like Codex and Claude Code get mouse scrolling and scrollbars",
-              "- Portable native D3D11: feedback zip archive using the Windows native D3D11 renderer; use the default Portable asset if you hit rendering issues",
+              "- Portable: default native Direct3D 11 zip archive containing wispterm.exe",
+              "- Portable compat: native Direct3D 11 zip archive for older Windows 10 machines - bundles WebView2Loader.dll for the embedded browser plus a modern ConPTY (conpty.dll + OpenConsole.exe) so TUI apps like Codex and Claude Code get mouse scrolling and scrollbars",
+              "- Portable OpenGL fallback: compatibility zip archive for systems where the native D3D11 renderer cannot start or render correctly",
               "- Diagnostic (debug): console build with on-disk logging + crash reports for troubleshooting (ReleaseSafe). See docs/windows-debug-build.md.",
               "",
               "Portable builds can add or remove WispTerm from Windows Search and enable or disable startup from Settings."
@@ -267,7 +267,7 @@ jobs:
               $notes = $assetNotes
             }
 
-            gh release create $tag $portableAsset $portableCompatAsset $portableNativeD3D11Asset $debugAsset `
+            gh release create $tag $portableAsset $portableCompatAsset $portableOpenGLAsset $debugAsset `
               --repo $env:GITHUB_REPOSITORY `
               --verify-tag `
               --generate-notes `

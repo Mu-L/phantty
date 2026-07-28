@@ -1,19 +1,18 @@
 # Windows Native D3D11 Default Migration Gate
 
-This document is the Phase V closeout gate for making the Windows native D3D11
-renderer eligible for a later Phase VI default migration. It is deliberately not
-a release announcement and not a default change. Windows `auto` remains OpenGL
-until a separate, small, easily revertible Phase VI PR changes that behavior.
+This document records the Phase V closeout gate and the Phase VI migration
+constraints. Phase VI ships in v1.34.0: Windows `auto` and the normal portable
+packages now use native D3D11, while OpenGL remains a separately built and
+published fallback.
 
 ## Current Boundary
 
-- Explicit `d3d11` is the only way to run the native D3D11 backend today.
-- Windows `auto` still resolves to OpenGL.
-- The OpenGL + DXGI present path remains the compatibility fallback.
-- D3D11 fallback is next-launch/future-auto policy; there is no same-process
-  D3D11-to-OpenGL renderer switch.
-- A matching `d3d11-fallback` marker may influence future-auto dry-run
-  decisions, but it must not silently override explicit `d3d11`.
+- Windows `auto` resolves to D3D11.
+- Explicit `-Dgpu-backend=opengl` builds the compatibility fallback.
+- Releases publish the fallback as `wispterm-windows-portable-opengl-*.zip`.
+- There is no same-process D3D11-to-OpenGL renderer switch.
+- The version+adapter-scoped `d3d11-fallback` marker remains diagnostic policy;
+  it does not override the compile-time backend selected in a published binary.
 
 ## Ghostty Comparison
 
@@ -36,9 +35,9 @@ unavailable environment is missing evidence, not a passing result.
 | D3D11 normal session | `debug/test-d3d11-normal-session.ps1` passes after `zig build -Dgpu-backend=d3d11`. |
 | Device recreate success | `-RecreateSmoke` records exactly one successful recreate/restore path. |
 | Device recreate failure | `-RecreateFailureSmoke` escalates exactly once to a fallback candidate and writes a marker. |
-| Fallback marker policy | `-FallbackMarkerSmoke` proves explicit D3D11 still wins, current auto stays OpenGL, and future-auto would select OpenGL from a matching marker. |
+| Fallback marker policy | `-FallbackMarkerSmoke` proves explicit D3D11 still wins, current auto stays D3D11, and the marker-aware policy would select OpenGL from a matching marker. |
 | Future-auto dry-run | `-AutoDryRunSmoke` proves current auto, future eligible D3D11, matching-marker OpenGL, explicit D3D11, explicit OpenGL, and stale-marker selector outcomes. |
-| OpenGL fallback | `zig build` plus `-Backend opengl` proves the compatibility renderer still runs the normal-session UI subset. |
+| OpenGL fallback | `zig build -Dgpu-backend=opengl` plus `-Backend opengl` proves the compatibility renderer still runs the normal-session UI subset. |
 | Rapid resize | `-RapidResizeSmoke` proves nonblank frames, resize diagnostics, and no resize/present failures. |
 | Window state | `-WindowStateSmoke` proves maximize, restore, minimize, and restore-from-minimize. |
 | Fullscreen startup | `-FullscreenStartupSmoke` proves config startup fullscreen, Alt+Enter exit, and restored baseline size. |
@@ -69,7 +68,7 @@ that records the result. The ledger format lives in
 | Multi-monitor same DPI | Resize/window evidence remains nonblank after monitor moves when available. |
 | Multi-monitor mixed DPI | DPI facts are recorded; failures are classified and documented. |
 
-## Phase VI Entry Conditions
+## Phase VI Entry Conditions (completed for v1.34.0)
 
 Phase VI may start only when all of these are true:
 
@@ -81,8 +80,8 @@ Phase VI may start only when all of these are true:
 4. OpenGL fallback still passes its normal-session smoke on the same branch.
 5. The future-auto dry-run explains each selector outcome: D3D11 eligible,
    OpenGL from marker, OpenGL from explicit selection, and stale marker ignored.
-6. The Phase VI default migration is a separate PR that only changes selector
-   policy and documentation needed for that policy.
+6. The Phase VI default migration is a separate PR limited to selector,
+   packaging/updater policy, tests, and documentation needed for that policy.
 7. Reverting the Phase VI PR restores Windows `auto` to OpenGL without reverting
    the native renderer implementation.
 
@@ -119,7 +118,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\test-d3d11-environme
 powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\summarize-d3d11-environment-matrix.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\audit-d3d11-default-gate.ps1
 
-zig build
+zig build -Dgpu-backend=opengl
 powershell -NoProfile -ExecutionPolicy Bypass -File .\debug\test-d3d11-normal-session.ps1 -Backend opengl
 
 zig build check-sizes
@@ -145,7 +144,7 @@ the generated matrix table.
 
 ## Rollback Rule
 
-If D3D11 becomes the Windows `auto` default and a post-merge regression appears,
-the first rollback should revert only the Phase VI selector/default PR. Do not
-revert the Phase I-V renderer implementation unless the bug is proven to live
-outside the selector/default policy.
+If a post-merge D3D11-default regression appears, first direct affected users to
+the OpenGL fallback package. If the default itself must be rolled back, revert
+only the Phase VI selector/packaging PR; do not revert the Phase I-V renderer
+implementation unless the bug is proven to live outside default policy.

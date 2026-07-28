@@ -1,8 +1,7 @@
-//! Opt-in D3D11 future-auto selector dry-run smoke.
+//! Opt-in D3D11 selector and fallback-policy dry-run smoke.
 //!
 //! Enable with `WISPTERM_D3D11_AUTO_DRY_RUN_SMOKE=1`. This logs selector
-//! decisions for the current Windows auto default and the future Windows auto
-//! policy without changing the active backend or writing fallback markers.
+//! decisions without changing the active backend or writing fallback markers.
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -19,7 +18,7 @@ threadlocal var enabled_cache = false;
 threadlocal var fired = false;
 
 const SmokeDecision = struct {
-    current_auto_opengl: bool,
+    current_auto_d3d11: bool,
     future_auto_d3d11: bool,
     future_auto_marker_opengl: bool,
     explicit_d3d11_ignored_marker: bool,
@@ -59,7 +58,7 @@ fn evaluateDecisions(version: []const u8, adapter_id: []const u8, marker_text: [
     const stale_marker = fallback_marker.decide(.windows, "auto", stale_marker_text, version, adapter_id, .future_windows_auto);
 
     return .{
-        .current_auto_opengl = current_auto.backend == Backend.opengl and
+        .current_auto_d3d11 = current_auto.backend == Backend.d3d11 and
             current_auto.effect == .current_auto_default_unchanged,
         .future_auto_d3d11 = future_auto.backend == Backend.d3d11 and
             future_auto.effect == .future_auto_d3d11,
@@ -109,10 +108,10 @@ pub fn maybeRun() void {
 
     const decision = evaluateDecisions(build_options.app_version, adapter_id, marker, stale_marker);
     render_diagnostics.log(
-        "d3d11-auto-dry-run-smoke adapter={s} current_auto_opengl={} future_auto_d3d11={} future_auto_marker_opengl={} explicit_d3d11_ignored_marker={} explicit_opengl={} stale_marker_ignored={} automatic_fallback=false default_unchanged=true",
+        "d3d11-auto-dry-run-smoke adapter={s} current_auto_d3d11={} future_auto_d3d11={} future_auto_marker_opengl={} explicit_d3d11_ignored_marker={} explicit_opengl={} stale_marker_ignored={} automatic_fallback=false default_unchanged=true",
         .{
             adapter_id,
-            decision.current_auto_opengl,
+            decision.current_auto_d3d11,
             decision.future_auto_d3d11,
             decision.future_auto_marker_opengl,
             decision.explicit_d3d11_ignored_marker,
@@ -155,7 +154,7 @@ test "D3D11 auto dry-run smoke validates selector decisions" {
     );
 
     const decision = evaluateDecisions("1.20.0", "adapter-a", marker, stale_marker);
-    try std.testing.expect(decision.current_auto_opengl);
+    try std.testing.expect(decision.current_auto_d3d11);
     try std.testing.expect(decision.future_auto_d3d11);
     try std.testing.expect(decision.future_auto_marker_opengl);
     try std.testing.expect(decision.explicit_d3d11_ignored_marker);

@@ -5,15 +5,27 @@ const platform_update_package = @import("platform/update_package.zig");
 const update_check = @import("update_check.zig");
 
 pub fn runtimePackage(webview_enabled: bool, has_embedded_browser_payload: bool) update_check.ReleasePackage {
-    return platform_update_package.runtimePackage(webview_enabled, has_embedded_browser_payload);
+    return platform_update_package.runtimePackage(
+        build_options.gpu_backend,
+        webview_enabled,
+        has_embedded_browser_payload,
+    );
 }
 
 pub fn defaultPackage() update_check.ReleasePackage {
-    return platform_update_package.defaultPackage();
+    return platform_update_package.runtimePackage(
+        build_options.gpu_backend,
+        build_options.webview,
+        false,
+    );
 }
 
 pub fn currentPackage(allocator: std.mem.Allocator) !update_check.ReleasePackage {
-    return platform_update_package.currentPackage(allocator, build_options.webview);
+    return platform_update_package.currentPackage(
+        allocator,
+        build_options.webview,
+        build_options.gpu_backend,
+    );
 }
 
 /// Absolute path the release asset is saved to: the user's Downloads folder

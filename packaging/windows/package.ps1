@@ -5,7 +5,7 @@ param(
     [string]$ConPtyVersion = '1.24.260512001',
     [switch]$SkipBuild,
     [switch]$SkipCompatBundle,
-    [switch]$SkipNativeD3D11Bundle,
+    [switch]$SkipOpenGLBundle,
     [switch]$DebugConsole,
     [string]$Optimize = 'ReleaseFast'
 )
@@ -184,20 +184,20 @@ if ($DebugConsole) {
     exit 0
 }
 
-$nativeD3D11InstallDir = Join-Path $repoRoot 'zig-out-native-d3d11'
+$openGLInstallDir = Join-Path $repoRoot 'zig-out-opengl'
 
 if (-not $SkipBuild) {
     Push-Location $repoRoot
     try {
-        & zig build -Doptimize=ReleaseFast -Dgpu-backend=opengl
+        & zig build -Doptimize=ReleaseFast
         if ($LASTEXITCODE -ne 0) {
-            throw 'zig build -Doptimize=ReleaseFast -Dgpu-backend=opengl failed.'
+            throw 'zig build -Doptimize=ReleaseFast failed.'
         }
-        if (-not $SkipNativeD3D11Bundle) {
-            Remove-Item -Path $nativeD3D11InstallDir -Recurse -Force -ErrorAction SilentlyContinue
-            & zig build -Doptimize=ReleaseFast -Dgpu-backend=d3d11 -p $nativeD3D11InstallDir
+        if (-not $SkipOpenGLBundle) {
+            Remove-Item -Path $openGLInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+            & zig build -Doptimize=ReleaseFast -Dgpu-backend=opengl -p $openGLInstallDir
             if ($LASTEXITCODE -ne 0) {
-                throw 'zig build -Doptimize=ReleaseFast -Dgpu-backend=d3d11 failed.'
+                throw 'zig build -Doptimize=ReleaseFast -Dgpu-backend=opengl failed.'
             }
         }
     } finally {
@@ -209,14 +209,14 @@ $binaryPath = Join-Path $repoRoot 'zig-out\bin\wispterm.exe'
 if (-not (Test-Path $binaryPath)) {
     throw "Expected release binary was not found: $binaryPath"
 }
-$nativeD3D11BinaryPath = Join-Path $nativeD3D11InstallDir 'bin\wispterm.exe'
-if (-not $SkipNativeD3D11Bundle -and -not (Test-Path $nativeD3D11BinaryPath)) {
-    throw "Expected native D3D11 release binary was not found: $nativeD3D11BinaryPath"
+$openGLBinaryPath = Join-Path $openGLInstallDir 'bin\wispterm.exe'
+if (-not $SkipOpenGLBundle -and -not (Test-Path $openGLBinaryPath)) {
+    throw "Expected OpenGL fallback release binary was not found: $openGLBinaryPath"
 }
 
 $portableDir = Join-Path $resolvedOutputDir 'portable'
 $portableCompatDir = Join-Path $resolvedOutputDir 'portable-compat'
-$portableNativeD3D11Dir = Join-Path $resolvedOutputDir 'portable-native-d3d11'
+$portableOpenGLDir = Join-Path $resolvedOutputDir 'portable-opengl'
 $webView2LoaderPath = $null
 $conPtyPair = $null
 
@@ -225,20 +225,20 @@ if (-not $SkipCompatBundle) {
     $conPtyPair = Get-ConPtyPair -RepoRoot $repoRoot -Version $ConPtyVersion
 }
 
-Remove-Item -Path $portableDir, $portableCompatDir, $portableNativeD3D11Dir, (Join-Path $resolvedOutputDir 'installer') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $portableDir, $portableCompatDir, $portableOpenGLDir, (Join-Path $resolvedOutputDir 'installer') -Recurse -Force -ErrorAction SilentlyContinue
 
 Copy-PortablePayload -BinaryPath $binaryPath -TargetDir $portableDir -ReleaseVersion $releaseVersion
 if ($webView2LoaderPath) {
     Copy-PortablePayload -BinaryPath $binaryPath -TargetDir $portableCompatDir -ReleaseVersion $releaseVersion -WebView2LoaderPath $webView2LoaderPath -ConPtyPair $conPtyPair
 }
-if (-not $SkipNativeD3D11Bundle) {
-    Copy-PortablePayload -BinaryPath $nativeD3D11BinaryPath -TargetDir $portableNativeD3D11Dir -ReleaseVersion $releaseVersion
+if (-not $SkipOpenGLBundle) {
+    Copy-PortablePayload -BinaryPath $openGLBinaryPath -TargetDir $portableOpenGLDir -ReleaseVersion $releaseVersion
 }
 
 Write-Host "Portable build: $(Join-Path $portableDir 'wispterm.exe')"
 if ($webView2LoaderPath) {
     Write-Host "Portable compat build: $(Join-Path $portableCompatDir 'wispterm.exe')"
 }
-if (-not $SkipNativeD3D11Bundle) {
-    Write-Host "Portable native D3D11 build: $(Join-Path $portableNativeD3D11Dir 'wispterm.exe')"
+if (-not $SkipOpenGLBundle) {
+    Write-Host "Portable OpenGL fallback build: $(Join-Path $portableOpenGLDir 'wispterm.exe')"
 }

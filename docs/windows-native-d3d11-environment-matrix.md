@@ -3,7 +3,7 @@
 This is the Phase V evidence ledger for Windows native D3D11 environment
 coverage. It records evidence requirements and the JSON fields emitted by
 `debug/test-d3d11-environment-smoke.ps1`; it is not a default migration plan.
-Windows `auto` remains OpenGL until the separate Phase VI gate is satisfied.
+Phase VI shipped in v1.34.0, so Windows `auto` now resolves to D3D11.
 
 ## Boundary
 

@@ -2,8 +2,8 @@
 //!
 //! WispTerm resolves the active renderer backend at comptime, Ghostty-style, so
 //! D3D11 cannot safely switch to OpenGL in-process. This module defines the
-//! state-file marker and dry-run selection rules used by later Phase V/VI work;
-//! it does not change the current Windows `auto` default or trigger fallback.
+//! state-file marker and dry-run selection rules. It never switches renderer
+//! backends in-process.
 
 const std = @import("std");
 const Backend = @import("../backend.zig").Backend;
@@ -256,7 +256,7 @@ test "D3D11 fallback policy keeps current Windows auto default unchanged" {
     const text = try format(&buf, .blocked, "1.20.0", "adapter-a", .device_lost);
     const decision = decide(.windows, "auto", text, "1.20.0", "adapter-a", .current_default);
 
-    try std.testing.expectEqual(Backend.opengl, decision.backend);
+    try std.testing.expectEqual(Backend.d3d11, decision.backend);
     try std.testing.expectEqual(MarkerEffect.current_auto_default_unchanged, decision.effect);
     try std.testing.expect(!decision.warning);
 }

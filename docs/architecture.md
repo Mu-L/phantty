@@ -63,9 +63,9 @@ unsupported stubs only for missing capabilities). A new host implements a
   keycodes). IME composition goes through `setImeCaret` / `imePreeditText`.
 - **Rendering surface** — `swapBuffers`, `framebufferSize`, `clientSize`. The
   GPU backend is selected behind the renderer and wired to this surface. The
-  long-term target matrix is Direct3D 11/DXGI on Windows, Metal on macOS, and
-  OpenGL on Linux; today Windows still uses OpenGL for drawing with a DXGI/D3D11
-  flip-model presenter as the default present path.
+  target matrix is Direct3D 11/DXGI on Windows, Metal on macOS, and OpenGL on
+  Linux. Windows defaults to native D3D11 and publishes a separate OpenGL
+  compatibility package.
 - **Window state** — DPI/content scale (`dpi`, `effectiveDpi`,
   `consumeDpiChanged`), geometry (`clientRect`, `windowRect`,
   `nearestMonitorWorkArea`, `setOuterFrame`), and chrome state (fullscreen,
