@@ -13,7 +13,7 @@ plans belong in [ROADMAP.md](ROADMAP.md); completed changes belong in
 | Terminal host | Win32/ConPTY | AppKit/PTY | SDL3/POSIX PTY, experimental |
 | Embedded browser panel | WebView2 | WKWebView | Disabled |
 | WispTerm Remote transport | WinHTTP WebSocket | NSURLSession WebSocket | Not implemented |
-| Auto-update package matching | Windows portable zip flavors | Generic DMG matcher; release-asset naming needs review | Not implemented |
+| Auto-update package matching | Windows portable zip flavors | Architecture-specific DMG matching | Not implemented |
 
 ## Version Surfaces
 
@@ -73,10 +73,6 @@ tested passes.
 - Remote transport uses a native `NSURLSessionWebSocketTask` bridge and is
   compiled/tested on macOS, but full relay interoperability still needs live
   relay smoke coverage before removing the "stabilizing" qualifier.
-- The macOS update checker currently matches a generic `wispterm-macos-{tag}.dmg`
-  name while release workflows publish arch-qualified DMG assets. Align the
-  matcher before relying on in-app macOS update downloads.
-
 ## Linux
 
 - Embedded browser panel is disabled. `url-open-mode = embedded` falls back to

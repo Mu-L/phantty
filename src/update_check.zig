@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const platform_update_package = @import("platform/update_package.zig");
 const release_package = @import("release_package.zig");
 
@@ -471,27 +472,32 @@ test "update_check: selects supported Windows portable assets" {
 
 test "update_check: selects macOS DMG asset for macOS package" {
     const package = ReleasePackage{ .platform = .macos };
-    var asset_name_buf: [asset_name_buffer_len]u8 = undefined;
-    const asset_name = try platform_update_package.assetName("v1.28.0", package, &asset_name_buf);
-
-    const release = ReleaseInfo{
-        .tag_name = "v1.28.0",
-        .html_url = "https://github.com/xuzhougeng/wispterm/releases/tag/v1.28.0",
-        .draft = false,
-        .prerelease = false,
-        .assets = &.{
-            .{
-                .name = asset_name,
-                .download_url = "https://example.test/wispterm-macos-v1.28.0.dmg",
-                .size = 1234,
-            },
+    const expected_name, const expected_url = switch (builtin.cpu.arch) {
+        .aarch64 => .{
+            "wispterm-macos-aarch64-v1.28.0.dmg",
+            "https://example.test/wispterm-macos-aarch64-v1.28.0.dmg",
         },
-        .owned = false,
+        .x86_64 => .{
+            "wispterm-macos-x86_64-v1.28.0.dmg",
+            "https://example.test/wispterm-macos-x86_64-v1.28.0.dmg",
+        },
+        else => return error.SkipZigTest,
     };
+
+    const json =
+        \\{"tag_name":"v1.28.0","html_url":"https://github.com/xuzhougeng/wispterm/releases/tag/v1.28.0","draft":false,"prerelease":false,"assets":[
+        \\  {"name":"wispterm-macos-v1.28.0.dmg","browser_download_url":"https://example.test/wispterm-macos-v1.28.0.dmg","size":1000},
+        \\  {"name":"wispterm-macos-aarch64-v1.28.0.dmg","browser_download_url":"https://example.test/wispterm-macos-aarch64-v1.28.0.dmg","size":2000},
+        \\  {"name":"wispterm-macos-x86_64-v1.28.0.dmg","browser_download_url":"https://example.test/wispterm-macos-x86_64-v1.28.0.dmg","size":3000}
+        \\]}
+    ;
+    const release = try parseLatestRelease(std.testing.allocator, json);
+    defer release.deinit(std.testing.allocator);
 
     const result = evaluateReleaseForPackage("1.27.0", release, package);
     try std.testing.expectEqual(State.update_available, result.state);
-    try std.testing.expectEqualStrings("wispterm-macos-v1.28.0.dmg", result.asset_name);
+    try std.testing.expectEqualStrings(expected_name, result.asset_name);
+    try std.testing.expectEqualStrings(expected_url, result.asset_download_url);
 }
 
 test "update_check: update result includes selected asset fields" {
