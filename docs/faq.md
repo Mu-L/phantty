@@ -65,6 +65,29 @@ To confirm a background tool is responsible, select text with **Shift + arrow
 keys** (keyboard only, no mouse): if that does *not* trigger the interrupt, a
 pointing-device/selection utility is the cause.
 
+## How Do I Copy and Paste While tmux Mouse Mode Is Enabled?
+
+When tmux enables mouse reporting, an unmodified drag belongs to tmux rather
+than WispTerm. Hold **Shift** while dragging to bypass tmux and create a local
+WispTerm selection. Then use **Ctrl+Shift+C** on Windows/Linux or **Cmd+C** on
+macOS to copy it to the system clipboard.
+
+Use **Ctrl+V** on Windows/Linux or **Cmd+V** on macOS to paste clipboard text.
+**Ctrl+Shift+V** / **Cmd+Shift+V** pastes a clipboard image when present and
+falls back to text otherwise.
+
+WispTerm uses a configurable right-click action instead of a native context
+menu. With tmux mouse reporting active, hold **Shift** while right-clicking so
+the click stays local. To copy an existing selection and paste when there is no
+selection, add this to the WispTerm config:
+
+```conf
+right-click-action = copy-or-paste
+```
+
+These shortcuts operate on the local system clipboard. tmux's own copy-mode
+buffer remains separate unless tmux is configured to synchronize it.
+
 ## Why Is WispTerm Laggy or Black on a Low-Spec PC (Weak Integrated GPU)?
 
 On Windows, WispTerm presents frames through a DXGI flip-model swapchain by
