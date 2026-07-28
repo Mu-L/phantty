@@ -500,6 +500,34 @@ test "update_check: selects macOS DMG asset for macOS package" {
     try std.testing.expectEqualStrings(expected_url, result.asset_download_url);
 }
 
+test "update_check: selects the published Linux x86_64 AppImage asset" {
+    if (builtin.cpu.arch != .x86_64) return error.SkipZigTest;
+
+    const json =
+        \\{
+        \\  "tag_name":"v1.33.1",
+        \\  "html_url":"https://github.com/xuzhougeng/wispterm/releases/tag/v1.33.1",
+        \\  "draft":false,
+        \\  "prerelease":false,
+        \\  "assets":[
+        \\    {"name":"wispterm-linux-v1.33.1.AppImage","browser_download_url":"https://example.test/generic.AppImage","size":11},
+        \\    {"name":"WispTerm-1.33.1-aarch64.AppImage","browser_download_url":"https://example.test/arm64.AppImage","size":22},
+        \\    {"name":"WispTerm-1.33.1-x86_64.AppImage","browser_download_url":"https://example.test/x86_64.AppImage","size":33}
+        \\  ]
+        \\}
+    ;
+
+    const release = try parseLatestRelease(std.testing.allocator, json);
+    defer release.deinit(std.testing.allocator);
+
+    const package = ReleasePackage{ .platform = .linux };
+    const result = evaluateReleaseForPackage("1.33.0", release, package);
+    try std.testing.expectEqual(State.update_available, result.state);
+    try std.testing.expectEqualStrings("WispTerm-1.33.1-x86_64.AppImage", result.asset_name);
+    try std.testing.expectEqualStrings("https://example.test/x86_64.AppImage", result.asset_download_url);
+    try std.testing.expectEqual(@as(u64, 33), result.asset_size);
+}
+
 test "update_check: update result includes selected asset fields" {
     const package = platform_update_package.packageForScenario(.compat);
     var asset_name_buf: [asset_name_buffer_len]u8 = undefined;

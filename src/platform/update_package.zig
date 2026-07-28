@@ -1,11 +1,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const release_package = @import("../release_package.zig");
+const linux_release_asset_backend = @import("update_package_linux.zig");
 const macos_release_asset_backend = @import("update_package_macos.zig");
 const windows_release_asset_backend = @import("update_package_windows.zig");
 
 pub const Backend = enum {
     windows,
+    linux,
     macos,
     unsupported,
 };
@@ -15,6 +17,7 @@ pub const PackageScenario = release_package.Flavor;
 pub fn backendForOs(os_tag: std.Target.Os.Tag) Backend {
     return switch (os_tag) {
         .windows => .windows,
+        .linux => .linux,
         .macos => .macos,
         else => .unsupported,
     };
@@ -22,6 +25,7 @@ pub fn backendForOs(os_tag: std.Target.Os.Tag) Backend {
 
 const impl = switch (backendForOs(builtin.os.tag)) {
     .windows => @import("update_package_windows.zig"),
+    .linux => @import("update_package_linux.zig"),
     .macos => @import("update_package_macos.zig"),
     .unsupported => @import("update_package_unsupported.zig"),
 };
@@ -47,6 +51,7 @@ pub fn assetNameForScenario(
 pub fn assetName(tag_name: []const u8, package: release_package.Package, buf: []u8) ![]const u8 {
     return switch (package.platform) {
         .windows => windows_release_asset_backend.assetName(tag_name, package, buf),
+        .linux => linux_release_asset_backend.assetName(tag_name, package, buf),
         .macos => macos_release_asset_backend.assetName(tag_name, package, buf),
         else => error.UnsupportedReleasePackage,
     };
@@ -55,6 +60,7 @@ pub fn assetName(tag_name: []const u8, package: release_package.Package, buf: []
 pub fn matchesAssetName(name: []const u8, tag_name: []const u8, package: release_package.Package) bool {
     return switch (package.platform) {
         .windows => windows_release_asset_backend.matchesAssetName(name, tag_name, package),
+        .linux => linux_release_asset_backend.matchesAssetName(name, tag_name, package),
         .macos => macos_release_asset_backend.matchesAssetName(name, tag_name, package),
         else => false,
     };
@@ -80,6 +86,7 @@ pub fn runtimePackageForOs(
 ) release_package.Package {
     return switch (backendForOs(os_tag)) {
         .windows => release_package.Package.init(.windows, runtimeFlavor(webview_enabled, has_compat_payload)),
+        .linux => defaultPackageForOs(os_tag),
         .macos => defaultPackageForOs(os_tag),
         .unsupported => defaultPackageForOs(os_tag),
     };
@@ -95,7 +102,7 @@ pub fn currentPackage(allocator: std.mem.Allocator, webview_enabled: bool) !rele
 
 test "platform update package selects backend by target OS" {
     try std.testing.expectEqual(Backend.windows, backendForOs(.windows));
-    try std.testing.expectEqual(Backend.unsupported, backendForOs(.linux));
+    try std.testing.expectEqual(Backend.linux, backendForOs(.linux));
     try std.testing.expectEqual(Backend.macos, backendForOs(.macos));
 }
 
@@ -150,13 +157,24 @@ test "platform update package builds macOS DMG asset names" {
     try std.testing.expect(!matchesAssetName("wispterm-macos-v1.28.0.zip", "v1.28.0", .{ .platform = .macos }));
 }
 
+test "platform update package builds Linux AppImage asset names" {
+    if (builtin.cpu.arch != .x86_64) return error.SkipZigTest;
+
+    var buf: [128]u8 = undefined;
+    const package = release_package.Package{ .platform = .linux };
+    const name = try assetName("v1.33.1", package, &buf);
+    try std.testing.expectEqualStrings("WispTerm-1.33.1-x86_64.AppImage", name);
+    try std.testing.expect(matchesAssetName("WispTerm-1.33.1-x86_64.AppImage", "v1.33.1", package));
+    try std.testing.expect(!matchesAssetName("WispTerm-v1.33.1-x86_64.AppImage", "v1.33.1", package));
+}
+
 test "platform update package rejects unsupported platform asset names" {
     var buf: [128]u8 = undefined;
     try std.testing.expectError(error.UnsupportedReleasePackage, assetName("v0.28.0", .{
-        .platform = .linux,
+        .platform = .unsupported,
     }, &buf));
-    try std.testing.expect(!matchesAssetName("wispterm-linux-v0.28.0.tar.gz", "v0.28.0", .{
-        .platform = .linux,
+    try std.testing.expect(!matchesAssetName("wispterm-freebsd-v0.28.0.tar.gz", "v0.28.0", .{
+        .platform = .unsupported,
     }));
 }
 

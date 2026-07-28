@@ -460,6 +460,8 @@ test {
     // Pure macOS release-asset naming: both supported architectures are tested
     // on every native host without pulling in App/AppWindow or platform APIs.
     _ = @import("platform/update_package_macos.zig");
+    // Pure Linux release-asset naming, including architecture filtering.
+    _ = @import("platform/update_package_linux.zig");
     // Generic POSIX SSH/WSL command builder: asserts native (non-Windows)
     // command-line shapes, so it runs here rather than in test-full's Windows
     // cross-compile path. (The Windows backend stays in test-full.)
