@@ -11,6 +11,7 @@ const AppWindow = @import("AppWindow.zig");
 const ai_chat = @import("assistant/conversation/session.zig");
 const app_metadata = @import("app_metadata.zig");
 const keybind = @import("keybind.zig");
+const memory_digest_scheduler = @import("memory_digest/scheduler.zig");
 const console_host_policy = @import("platform/console_host_policy.zig");
 const platform_com = @import("platform/com.zig");
 const platform_display = @import("platform/display.zig");
@@ -1153,6 +1154,7 @@ pub fn deinit(self: *App) void {
     self.joinAllWindowThreads();
     self.joinUpdateThread();
     self.joinDownloadThread();
+    memory_digest_scheduler.deinit();
 
     if (self.remote_client) |client| {
         client.destroy();
