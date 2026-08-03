@@ -7714,7 +7714,7 @@ fn runMainLoop(self: *AppWindow) !void {
 
         // Update focus state
         const focused = window_backend.isFocused(win);
-        if (window_focused != focused) g_force_rebuild = true;
+        if (window_focused != focused) applyUiEffect(.{ .needs_rebuild = true });
         window_focused = focused;
 
         const fb = window_backend.framebufferSize(win);
@@ -8162,7 +8162,6 @@ fn runMainLoop(self: *AppWindow) !void {
 
     // Clean up file explorer async state (join background thread, free job)
     file_explorer.deinit();
-    memory_digest_scheduler.deinit();
     weixin_qr_renderer.deinit();
     weixin_qr_panel.deinit();
     feishu_reg_renderer.deinit();

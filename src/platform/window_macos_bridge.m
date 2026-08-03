@@ -646,6 +646,7 @@ static uintptr_t wispterm_macos_map_ansi_key_code(unsigned short key_code) {
 static uintptr_t wispterm_macos_map_key_code(unsigned short key_code, NSString *characters) {
     switch (key_code) {
         case 36: return 0x0D;  // Return
+        case 76: return 0x0D;  // Keypad Enter
         case 48: return 0x09;  // Tab
         case 51: return 0x08;  // Backspace
         case 53: return 0x1B;  // Escape
