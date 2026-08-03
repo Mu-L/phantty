@@ -83,6 +83,7 @@ const common_tools_after_wsl =
     \\- Before sending WSL/SSH artifacts to a chat channel, call `copy_file` without a destination to stage under `wispterm-files`, then pass its local path to `send_attachment`.
     \\- To send a local/Weixin/workspace file to WSL or SSH, call `copy_file` with `dest_surface_id`; do not paste copy commands into agent/REPL terminals.
     \\- Prefer `read_file`, `write_file`, `edit_file`, and `copy_file` for local/WSL/remote SSH files. For WSL/SSH, pass the open terminal `surface_id` or rely on the selected terminal context; relative paths use that surface cwd. Writes show a diff and may require approval.
+    \\- Never use shell heredocs (`<<EOF`, `<<'PY'`, etc.) to create files or feed multiline scripts in local, WSL, or SSH commands. Use `write_file` for the complete content, then run the file separately. This applies even to large or temporary scripts that will be deleted afterward.
     \\
     \\Python:
     \\- Use uv for Python environments; run `uv --version` first.
@@ -209,6 +210,15 @@ test "platform agent prompt mentions file tools on every OS" {
         try std.testing.expect(std.mem.indexOf(u8, p, "read_file") != null);
         try std.testing.expect(std.mem.indexOf(u8, p, "write_file") != null);
         try std.testing.expect(std.mem.indexOf(u8, p, "edit_file") != null);
+    }
+}
+
+test "platform agent prompt forbids heredoc file and script writes on every OS" {
+    for ([_]std.Target.Os.Tag{ .windows, .linux, .macos }) |os| {
+        const p = defaultSystemPromptForOs(os);
+        try std.testing.expect(std.mem.indexOf(u8, p, "Never use shell heredocs") != null);
+        try std.testing.expect(std.mem.indexOf(u8, p, "large or temporary scripts") != null);
+        try std.testing.expect(std.mem.indexOf(u8, p, "Use `write_file` for the complete content") != null);
     }
 }
 
