@@ -237,7 +237,7 @@ pub threadlocal var g_tabs: [MAX_TABS]?*TabState = .{null} ** MAX_TABS;
 pub threadlocal var g_tab_count: usize = 0;
 
 // Shell command for spawning new tabs (set once at startup from config)
-pub threadlocal var g_shell_cmd_buf: platform_pty_command.CommandLineBuffer = undefined;
+pub threadlocal var g_shell_cmd_buf: platform_pty_command.CommandLineBuffer = @splat(0);
 pub threadlocal var g_shell_cmd_len: usize = 0;
 pub threadlocal var g_scrollback_limit: u32 = 10_000_000;
 pub threadlocal var g_remote_client: ?*remote_client.Client = null;

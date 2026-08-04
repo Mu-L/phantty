@@ -252,6 +252,7 @@ test "prompt queue: busy applyChatInput keeps a per-entry reply context" {
     defer session.deinit();
 
     session.mutex.lock();
+    session.setInputTextLocked("draft");
     session.request_inflight = true;
     session.mutex.unlock();
 
@@ -279,6 +280,7 @@ test "prompt queue: busy applyChatInput keeps a per-entry reply context" {
     try std.testing.expectEqualStrings("user-b", second.reply_context.?.to_user_id);
     // 每条各存各的 ctx，单槽位 pending_reply_context 保持空。
     try std.testing.expect(session.pending_reply_context == null);
+    try std.testing.expectEqualStrings("draft", session.input());
 }
 
 test "prompt queue: enqueue takes pending images so a later submit cannot steal them" {

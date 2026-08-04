@@ -6000,11 +6000,13 @@ const TestHistoryHookCapture = struct {
     }
 };
 
-var g_test_history_hook_capture: ?*TestHistoryHookCapture = null;
+const TestHistoryHookState = struct {
+    var capture: ?*TestHistoryHookCapture = null;
+};
 
 fn testHistoryHookCaptureCallback(event: HistoryChangeEvent) void {
     var owned = event;
-    const capture = g_test_history_hook_capture orelse {
+    const capture = TestHistoryHookState.capture orelse {
         owned.deinit();
         return;
     };
@@ -6915,8 +6917,8 @@ test "ai_chat: progress tool messages are ui-only history" {
 
     var capture = TestHistoryHookCapture{};
     defer capture.deinit();
-    g_test_history_hook_capture = &capture;
-    defer g_test_history_hook_capture = null;
+    TestHistoryHookState.capture = &capture;
+    defer TestHistoryHookState.capture = null;
 
     session.setHistoryChangeHook(testHistoryHookCaptureCallback);
     try appendProgressMessage(session, "running tool");
@@ -6952,8 +6954,8 @@ test "ai_chat: replayable skill tool messages emit history snapshots" {
 
     var capture = TestHistoryHookCapture{};
     defer capture.deinit();
-    g_test_history_hook_capture = &capture;
-    defer g_test_history_hook_capture = null;
+    TestHistoryHookState.capture = &capture;
+    defer TestHistoryHookState.capture = null;
 
     session.setHistoryChangeHook(testHistoryHookCaptureCallback);
     try appendReplayableToolMessage(session, "call-1", "skill_info", "# Skill: pdf");
@@ -6990,8 +6992,8 @@ test "ai_chat: model switch checkpoint emits separate resumable history record" 
 
     var capture = TestHistoryHookCapture{};
     defer capture.deinit();
-    g_test_history_hook_capture = &capture;
-    defer g_test_history_hook_capture = null;
+    TestHistoryHookState.capture = &capture;
+    defer TestHistoryHookState.capture = null;
     session.setHistoryChangeHook(testHistoryHookCaptureCallback);
 
     session.mutex.lock();
@@ -7033,8 +7035,8 @@ test "ai_chat: setTitle emits history hook snapshot" {
 
     var capture = TestHistoryHookCapture{};
     defer capture.deinit();
-    g_test_history_hook_capture = &capture;
-    defer g_test_history_hook_capture = null;
+    TestHistoryHookState.capture = &capture;
+    defer TestHistoryHookState.capture = null;
 
     session.setHistoryChangeHook(testHistoryHookCaptureCallback);
     session.setTitle("After");
@@ -9380,22 +9382,6 @@ test "setDefaultWorkingDir is reflected in currentAgentSettings" {
     try std.testing.expect(currentAgentSettings().working_dir == null);
 }
 
-test "submitScheduledPrompt sets composer and reports busy state" {
-    const a = std.testing.allocator;
-    const session = try Session.init(a, "test", "", "", "", "", "", "", "", "");
-    defer session.deinit();
-
-    // Not inflight: returns true and submit is invoked (no agent configured, no-ops).
-    const ok = session.submitScheduledPrompt("hello world");
-    try std.testing.expect(ok);
-
-    // Inflight: returns false (skip).
-    session.request_inflight = true;
-    const skipped = session.submitScheduledPrompt("again");
-    try std.testing.expect(!skipped);
-    session.request_inflight = false;
-}
-
 test "applyChatInput submits the whole multi-line message as one prompt" {
     const a = std.testing.allocator;
     const session = try Session.init(a, "test", "", "", "", "", "", "", "", "");
@@ -9414,26 +9400,6 @@ test "applyChatInput submits the whole multi-line message as one prompt" {
     // composer, so the composer shows exactly what the single submit sent.
     try std.testing.expect(session.applyChatInput("第一段\n\n第二段\r", ctx));
     try std.testing.expectEqualStrings("第一段\n\n第二段", session.input());
-}
-
-test "applyChatInput reports busy and leaves composer and reply context untouched" {
-    const a = std.testing.allocator;
-    const session = try Session.init(a, "test", "", "", "", "", "", "", "", "");
-    defer session.deinit();
-
-    var capture = WeixinAttachmentCapture{};
-    const ctx = chatops_reply.ReplyContext{
-        .sender = testWeixinSender(&capture),
-        .to_user_id = "wx-user",
-        .context_token = "ctx-1",
-    };
-
-    session.appendInputText("draft");
-    session.request_inflight = true;
-    try std.testing.expect(!session.applyChatInput("新任务\r", ctx));
-    session.request_inflight = false;
-    try std.testing.expectEqualStrings("draft", session.input());
-    try std.testing.expect(session.pending_reply_context == null);
 }
 
 test "runLoopCommandLocked creates, lists, and stops a loop task" {
@@ -9632,8 +9598,8 @@ test "ai chat appendContextCard stores collapsed persisted user context" {
 
     var capture = TestHistoryHookCapture{};
     defer capture.deinit();
-    g_test_history_hook_capture = &capture;
-    defer g_test_history_hook_capture = null;
+    TestHistoryHookState.capture = &capture;
+    defer TestHistoryHookState.capture = null;
     session.setHistoryChangeHook(testHistoryHookCaptureCallback);
 
     try session.appendContextCard("AI History: Codex sess-1", "## User\n\nstatus?", true);
