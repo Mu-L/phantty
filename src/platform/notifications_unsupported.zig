@@ -19,3 +19,5 @@ pub fn notificationAuthStatus() u8 {
 }
 
 pub fn requestNotificationAuth() void {}
+
+pub fn cleanup() void {}

@@ -14,6 +14,7 @@ pub fn resumeCommand(meta: types.SessionMeta, out: []u8) ResumeError![]const u8 
         .codex_resume => .{ .prefix = "codex resume ", .suffix = "" },
         .claude_resume => .{ .prefix = "claude --resume ", .suffix = "" },
         .kimi_resume => .{ .prefix = "kimi --session ", .suffix = "" },
+        .opencode_resume => .{ .prefix = "opencode -s ", .suffix = "" },
         .unavailable => return error.UnsupportedProvider,
     };
 
@@ -85,6 +86,7 @@ pub fn checkedPowerShellResume(meta: types.SessionMeta, out: []u8) ResumeError![
         .codex_resume => try append(out, &pos, "codex resume "),
         .claude_resume => try append(out, &pos, "claude --resume "),
         .kimi_resume => try append(out, &pos, "kimi --session "),
+        .opencode_resume => try append(out, &pos, "opencode -s "),
         .unavailable => return error.UnsupportedProvider,
     }
     try appendPowerShellSingleQuote(out, &pos, meta.session_id);
@@ -216,6 +218,16 @@ test "ai_history_resume: builds provider resume commands" {
         .resume_kind = .kimi_resume,
     };
     try std.testing.expectEqualStrings("kimi --session code-project", try resumeCommand(kimi, &out));
+
+    const opencode: types.SessionMeta = .{
+        .provider = .opencode,
+        .session_id = "ses_03282e836ffeRuTJVdTjunUnUs",
+        .title = "D",
+        .project_dir = "/home/me/project",
+        .source_path = "ses_03282e836ffeRuTJVdTjunUnUs",
+        .resume_kind = .opencode_resume,
+    };
+    try std.testing.expectEqualStrings("opencode -s ses_03282e836ffeRuTJVdTjunUnUs", try resumeCommand(opencode, &out));
 }
 
 test "ai_history_resume: quotes unsafe session ids" {
@@ -398,6 +410,19 @@ test "ai_history_resume: checked PowerShell resume checks directory before resum
     try std.testing.expectEqualStrings(
         "if (Test-Path -LiteralPath 'C:\\Project' -PathType Container) { Set-Location -LiteralPath 'C:\\Project'; kimi --session 'code-project' } else { Write-Error 'Cannot resume: project folder not found: C:\\Project' }",
         try checkedPowerShellResume(kimi, &out),
+    );
+
+    const opencode: types.SessionMeta = .{
+        .provider = .opencode,
+        .session_id = "ses_abc",
+        .title = "O",
+        .project_dir = "C:\\Project",
+        .source_path = "ses_abc",
+        .resume_kind = .opencode_resume,
+    };
+    try std.testing.expectEqualStrings(
+        "if (Test-Path -LiteralPath 'C:\\Project' -PathType Container) { Set-Location -LiteralPath 'C:\\Project'; opencode -s 'ses_abc' } else { Write-Error 'Cannot resume: project folder not found: C:\\Project' }",
+        try checkedPowerShellResume(opencode, &out),
     );
 }
 

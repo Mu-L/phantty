@@ -279,6 +279,20 @@ pub fn render(
         }
     }
 
+    // Busy 且有排队 prompt 时，在 header 状态区左侧显示队列计数。
+    if (session.request_inflight and session.prompt_queue.len() > 0) {
+        var queue_buf: [24]u8 = undefined;
+        const queue_text = std.fmt.bufPrint(&queue_buf, "Queued: {d}", .{session.prompt_queue.len()}) catch "";
+        if (queue_text.len > 0) {
+            const anchor_x = if (compact) statusDotRect(x, w, top).x else stopButtonRect(x, w, top).x;
+            const queue_w = titlebarTextWidth(queue_text);
+            const queue_x = anchor_x - queue_w - 12;
+            if (queue_x > x + LINE_PAD_X) {
+                _ = titlebar.renderTextLimited(queue_text, queue_x, header_y + 10, mixColor(fg, accent, 0.18), queue_w + 2);
+            }
+        }
+    }
+
     const input_text = session.input();
     const layout = inputLayout(x, w, input_text);
     const input_h = layout.input_h;
@@ -446,7 +460,9 @@ pub fn render(
     } else if (question) |view| {
         renderQuestionCard(view, x + LINE_PAD_X, input_h + APPROVAL_GAP, w - LINE_PAD_X * 2, questionCardHeight(view));
     }
-    if (session.rewind_open) {
+    if (session.queue_open) {
+        renderPromptQueuePanel(session, layout);
+    } else if (session.rewind_open) {
         renderRewindPicker(session, layout);
     } else {
         renderComposerSuggestions(session, layout, window_width, header_y);
@@ -1435,6 +1451,102 @@ fn firstLine(text: []const u8) []const u8 {
     return text[0..end];
 }
 
+const QUEUE_MAX_ROWS: usize = 6;
+
+/// Prompt-queue popup above the composer (same geometry idiom as the rewind
+/// picker): a header with the entry count and key hints, then one row per
+/// queued prompt — index, first-line text, [img] badge for attachments — with
+/// the selection highlighted and a scroll window keeping it in view. Row 0 is
+/// the queue head (the next prompt drainPromptQueue will send).
+fn renderPromptQueuePanel(session: *ai_chat.Session, layout: InputLayout) void {
+    const entries = session.prompt_queue.entries.items;
+    const total = entries.len;
+
+    const bg = AppWindow.g_theme.background;
+    const fg = AppWindow.g_theme.foreground;
+    const accent = AppWindow.g_theme.cursor_color;
+    const popup_w = @min(layout.field_w, SUGGESTION_MAX_W);
+    const popup_x = layout.field_x;
+    const popup_y = layout.field_y + layout.field_h + SUGGESTION_GAP;
+    const header_h = @max(SUGGESTION_ROW_H + 2, font.g_titlebar_cell_height + REWIND_HEADER_EXTRA);
+    const row_h = @max(SUGGESTION_ROW_H + 8, font.g_titlebar_cell_height + REWIND_ROW_EXTRA);
+    // At least one row so an empty queue still shows its empty-state line.
+    const visible = @min(@max(total, 1), QUEUE_MAX_ROWS);
+    const popup_h = REWIND_PAD_Y * 2 + header_h + row_h * @as(f32, @floatFromInt(visible));
+    const popup_bg = mixColor(bg, fg, 0.105);
+    const border = mixColor(bg, accent, 0.36);
+
+    ui_pipeline.fillQuadAlpha(popup_x, popup_y, popup_w, popup_h, popup_bg, 0.98);
+    ui_pipeline.fillQuadAlpha(popup_x, popup_y + popup_h - 1, popup_w, 1, border, 0.78);
+    ui_pipeline.fillQuadAlpha(popup_x, popup_y, popup_w, 1, mixColor(bg, fg, 0.20), 0.82);
+    ui_pipeline.fillQuadAlpha(popup_x, popup_y, 1, popup_h, mixColor(bg, fg, 0.16), 0.72);
+    ui_pipeline.fillQuadAlpha(popup_x + popup_w - 1, popup_y, 1, popup_h, mixColor(bg, fg, 0.16), 0.72);
+
+    const top = popup_y + popup_h - REWIND_PAD_Y;
+
+    const title_row_y = top - header_h;
+    const title_text_y = title_row_y + @round((header_h - font.g_titlebar_cell_height) / 2);
+    var title_buf: [40]u8 = undefined;
+    const title = std.fmt.bufPrint(&title_buf, "Queued Prompts ({d})", .{total}) catch "Queued Prompts";
+    _ = titlebar.renderTextLimited(
+        title,
+        popup_x + REWIND_PAD_X,
+        title_text_y,
+        mixColor(fg, accent, 0.16),
+        popup_w - REWIND_PAD_X * 2,
+    );
+    _ = titlebar.renderTextLimited(
+        "Enter edit  Del remove  Alt+Up/Dn move  Esc close",
+        popup_x + REWIND_PAD_X + 176,
+        title_text_y,
+        mixColor(bg, fg, 0.52),
+        @max(24.0, popup_w - REWIND_PAD_X * 2 - 176),
+    );
+
+    if (total == 0) {
+        const row_y = top - header_h - row_h;
+        const text_y = row_y + @round((row_h - font.g_titlebar_cell_height) / 2);
+        _ = titlebar.renderTextLimited(
+            "No queued prompts",
+            popup_x + REWIND_PAD_X,
+            text_y,
+            mixColor(bg, fg, 0.45),
+            popup_w - REWIND_PAD_X * 2,
+        );
+        return;
+    }
+
+    const selected = @min(session.queue_selected, total - 1);
+    var lo: usize = 0;
+    if (selected >= visible) lo = selected - visible + 1;
+    if (lo > total - visible) lo = total - visible;
+
+    var i = lo;
+    while (i < lo + visible and i < total) : (i += 1) {
+        const row = i - lo; // 0 = visual top
+        const row_y = top - header_h - @as(f32, @floatFromInt(row + 1)) * row_h;
+        if (i == selected) {
+            ui_pipeline.fillQuadAlpha(popup_x + 5, row_y + 4, popup_w - 10, row_h - 8, mixColor(bg, accent, 0.22), 0.92);
+            ui_pipeline.fillQuadAlpha(popup_x + 5, row_y + 4, 3, row_h - 8, accent, 0.82);
+        }
+        const entry = entries[i];
+        var label_buf: [160]u8 = undefined;
+        const label = std.fmt.bufPrint(
+            &label_buf,
+            "{d}. {s}{s}",
+            .{ i + 1, firstLine(entry.text), if (entry.images != null) " [img]" else "" },
+        ) catch firstLine(entry.text);
+        const text_y = row_y + @round((row_h - font.g_titlebar_cell_height) / 2);
+        _ = titlebar.renderTextLimited(
+            label,
+            popup_x + REWIND_PAD_X,
+            text_y,
+            if (i == selected) mixColor(fg, accent, 0.14) else fg,
+            popup_w - REWIND_PAD_X * 2,
+        );
+    }
+}
+
 fn renderRewindPicker(session: *ai_chat.Session, layout: InputLayout) void {
     var total: usize = 0;
     for (session.messages.items) |msg| {
@@ -1482,7 +1594,7 @@ fn renderRewindPicker(session: *ai_chat.Session, layout: InputLayout) void {
         popup_w - REWIND_PAD_X * 2,
     );
     _ = titlebar.renderTextLimited(
-        "Enter confirm  Esc cancel",
+        "Enter rewind  f fork  Esc cancel",
         popup_x + REWIND_PAD_X + 104,
         title_text_y,
         mixColor(bg, fg, 0.52),

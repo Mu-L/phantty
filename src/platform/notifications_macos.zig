@@ -26,3 +26,6 @@ pub fn notificationAuthStatus() u8 {
 pub fn requestNotificationAuth() void {
     wispterm_macos_notif_request_auth();
 }
+
+/// macOS notifications need no process-level teardown.
+pub fn cleanup() void {}

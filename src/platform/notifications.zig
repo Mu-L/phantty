@@ -38,9 +38,10 @@ const impl = switch (backendForOs(builtin.os.tag)) {
     .unsupported => @import("notifications_unsupported.zig"),
 };
 
-/// True on platforms with a native desktop-notification backend (macOS and Linux).
+/// True on platforms with a native desktop-notification backend (Windows,
+/// macOS, and Linux).
 pub const supports_desktop_notifications = switch (backendForOs(builtin.os.tag)) {
-    .macos, .linux => true,
+    .windows, .macos, .linux => true,
     else => false,
 };
 
@@ -60,9 +61,16 @@ pub fn requestAttention(handle: NativeHandle) void {
     impl.requestAttention(handle);
 }
 
-/// Post a native desktop notification (macOS toast). No-op where unsupported.
+/// Post a native desktop notification (Windows tray balloon / macOS toast /
+/// Linux notify-send). No-op where unsupported.
 pub fn showDesktopNotification(title: [:0]const u8, body: [:0]const u8) void {
     impl.showDesktopNotification(title, body);
+}
+
+/// Release any process-wide notification resources (Windows removes its tray
+/// icon). Safe to call when nothing was shown; no-op on other platforms.
+pub fn cleanup() void {
+    impl.cleanup();
 }
 
 /// Current cached authorization status (synchronous, cheap).

@@ -121,11 +121,15 @@ src/                         # Desktop terminal application
 ├── file_explorer.zig        # Local/SSH file explorer state and operations
 ├── themes.zig               # Embedded Ghostty-compatible themes
 ├── assistant/               # AI conversation session/protocol/composer plus loop,
-│                            #   profile, and sidebar-owned state
+│                            #   profile, sidebar-owned state, prompt queue
+│                            #   (prompt_queue.zig/session_queue.zig), and session
+│                            #   forking (fork.zig)
 ├── agent/                   # Agent config, access rules, history, and memory
 ├── agent_tools/             # Model tool-call runtime adapters
 ├── terminal_agents/         # External terminal agent detection/prompts/sessions
+│                            #   (Codex / Claude Code / Kimi Code / OpenCode history)
 ├── command/                 # Command center/palette model and registry
+├── recipe/                  # Named workspace recipes: store, naming form, palette list state
 ├── preview/                 # Preview pane, gallery, diagnostics, PDF/markdown/png
 ├── browser/                 # Embedded browser panel and URL handling
 ├── html/                    # Local HTML server and server model

@@ -250,6 +250,7 @@ fn sanitizedProviderLabel(provider: types.ProviderId) []const u8 {
         .codex => "codex",
         .claude => "claude-code",
         .kimi => "kimi",
+        .opencode => "opencode",
     };
 }
 

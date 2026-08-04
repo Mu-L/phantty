@@ -248,6 +248,8 @@ test {
     _ = @import("command/palette_model.zig");
     _ = @import("command/center_state.zig");
     _ = @import("command/palette_history_view.zig");
+    _ = @import("recipe/store.zig");
+    _ = @import("recipe/form_state.zig");
     _ = @import("platform/window_state_codec.zig");
     _ = @import("platform/dxgi_core.zig");
     _ = @import("platform/console_host_policy.zig");
@@ -305,6 +307,7 @@ test {
     _ = @import("markdown_text.zig");
     _ = @import("assistant/conversation/composer_layout.zig");
     _ = @import("assistant/conversation/input_text.zig");
+    _ = @import("assistant/conversation/prompt_queue.zig");
     _ = @import("assistant/conversation/composer.zig");
     _ = @import("composer_detail_wrap.zig");
     _ = @import("assistant/conversation/presentation.zig");
@@ -344,6 +347,7 @@ test {
     _ = @import("terminal_agents/sessions/provider_codex.zig");
     _ = @import("terminal_agents/sessions/provider_claude.zig");
     _ = @import("terminal_agents/sessions/provider_kimi.zig");
+    _ = @import("terminal_agents/sessions/provider_opencode.zig");
     _ = @import("terminal_agents/sessions/source.zig");
     _ = @import("terminal_agents/sessions/cache.zig");
     _ = @import("terminal_agents/sessions/markdown.zig");
@@ -378,6 +382,7 @@ test {
     _ = @import("text_search.zig");
     _ = @import("ssh/prompt.zig");
     _ = @import("selection_unit.zig");
+    _ = @import("send_to_chat.zig");
     _ = @import("scrollbar_model.zig");
     _ = @import("resize_gate.zig");
     _ = @import("preview/token.zig");
@@ -435,6 +440,7 @@ test {
     _ = @import("feishu/media.zig");
     _ = @import("assistant/conversation/title.zig");
     _ = @import("assistant/conversation/model_switch.zig");
+    _ = @import("assistant/conversation/fork.zig");
     _ = @import("command/registry.zig");
     _ = @import("tools/registry.zig");
     _ = @import("tools/mcp_registry.zig");

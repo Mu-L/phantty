@@ -85,6 +85,7 @@ const copyAiChatMessageToClipboard = clipboard.copyAiChatMessageToClipboard;
 const copyAiChatSpanToClipboard = clipboard.copyAiChatSpanToClipboard;
 pub const handleFileDrop = clipboard.handleFileDrop;
 pub const copySelectionToClipboard = clipboard.copySelectionToClipboard;
+pub const allocActiveSelectionText = clipboard.allocActiveSelectionText;
 pub const pasteFromClipboard = clipboard.pasteFromClipboard;
 const pasteClipboardIntoBrowserUrlBar = clipboard.pasteClipboardIntoBrowserUrlBar;
 const pasteClipboardIntoSessionLauncher = clipboard.pasteClipboardIntoSessionLauncher;
@@ -3120,6 +3121,7 @@ fn executeCommand(cmd: command_dispatch.Command) bool {
         .open_settings => overlays.settingsPageOpen(),
         // Late
         .copy => copySelectionToClipboard(),
+        .send_to_copilot => _ = AppWindow.sendSelectionToCopilot(),
         .paste => {
             if (assistant_conversation.current(aiCopilotFocused())) |target| {
                 pasteFromClipboardIntoAiChat(target.session);
