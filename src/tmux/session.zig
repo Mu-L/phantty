@@ -838,8 +838,13 @@ pub const Session = struct {
         try self.enqueueCommand(s, .{ .capture = .{ .pane_id = pane_id, .screen = screen } });
     }
 
-    /// The `list-panes` format string shared between `start` and `refreshPaneMeta`.
-    const list_panes_cmd = "list-panes -s -F \"#{pane_id}\t#{pane_current_path}\t#{pane_current_command}\"\n";
+    /// Use only printable delimiters in commands sent through the outer SSH
+    /// tty. tmux sanitizes literal control characters in control-mode command
+    /// arguments (a tab becomes `_`), which makes the reply impossible to
+    /// parse. The pane parser takes the last whitespace token as the command,
+    /// so paths containing spaces remain valid.
+    const list_panes_cmd = "list-panes -s -F \"#{pane_id} #{pane_current_path} #{pane_current_command}\"\n";
+    const list_windows_cmd = "list-windows -F \"#{window_id} #{window_active} #{window_layout} #{window_name}\"\n";
     // Mirrors Ghostty's tmux Viewer pane-state query. Semicolons preserve empty
     // fields on older tmux versions that do not expose every newer variable.
     const pane_state_format =
@@ -855,7 +860,7 @@ pub const Session = struct {
     /// notifications.)
     pub fn start(self: *Session) Allocator.Error!void {
         try self.enqueueResize();
-        try self.enqueueCommand("list-windows -F \"#{window_id}\t#{window_active}\t#{window_layout}\t#{window_name}\"\n", .window_list);
+        try self.enqueueCommand(list_windows_cmd, .window_list);
         try self.enqueueCommand(list_panes_cmd, .pane_list);
     }
 
@@ -901,18 +906,36 @@ pub const Session = struct {
         try self.enqueueCommand(s, .ignore);
     }
 
-    /// Queue raw key bytes for a pane as a hex `send-keys` command.
+    /// Queue terminal input using tmux's long-standing hexadecimal key-name
+    /// syntax. `send-keys -H` is newer than tmux 2.7, which is still common on
+    /// long-lived servers; `0x<codepoint>` works there and on current tmux.
+    /// Decode valid UTF-8 so non-ASCII text is not encoded a second time by
+    /// tmux, while ASCII control/mouse bytes remain exact codepoints.
     pub fn sendKeys(self: *Session, pane_id: usize, raw: []const u8) Allocator.Error!void {
         const old_len = self.cmds.items.len;
         errdefer self.cmds.items.len = old_len;
 
         var head: [48]u8 = undefined;
-        const h = std.fmt.bufPrint(&head, "send-keys -t %{d} -H", .{pane_id}) catch unreachable;
+        const h = std.fmt.bufPrint(&head, "send-keys -t %{d}", .{pane_id}) catch unreachable;
         try self.cmds.appendSlice(self.alloc, h);
-        for (raw) |byte| {
-            var hb: [8]u8 = undefined;
-            const hs = std.fmt.bufPrint(&hb, " {x:0>2}", .{byte}) catch unreachable;
+
+        var i: usize = 0;
+        while (i < raw.len) {
+            const seq_len = std.unicode.utf8ByteSequenceLength(raw[i]) catch 1;
+            const end = @min(raw.len, i + seq_len);
+            var codepoint: u21 = raw[i];
+            var advance: usize = 1;
+            if (seq_len > 1 and end - i == seq_len) {
+                const decoded: ?u21 = std.unicode.utf8Decode(raw[i..end]) catch null;
+                if (decoded) |cp| {
+                    codepoint = cp;
+                    advance = seq_len;
+                }
+            }
+            var hb: [16]u8 = undefined;
+            const hs = std.fmt.bufPrint(&hb, " 0x{x}", .{codepoint}) catch unreachable;
             try self.cmds.appendSlice(self.alloc, hs);
+            i += advance;
         }
         try self.cmds.append(self.alloc, '\n');
         try self.reply_queue.append(self.alloc, .ignore);
@@ -954,7 +977,8 @@ const WindowListLine = struct {
 
 fn parseWindowListLine(line: []const u8) ?WindowListLine {
     if (line.len < 2 or line[0] != '@') return null;
-    return parseTabbedWindowListLine(line);
+    if (std.mem.indexOfScalar(u8, line, '\t') != null) return parseTabbedWindowListLine(line);
+    return parseWhitespaceWindowListLine(line);
 }
 
 fn isWindowListReply(body: []const u8) bool {
@@ -984,6 +1008,26 @@ fn parseTabbedWindowListLine(line: []const u8) ?WindowListLine {
         .active = active,
         .layout_str = layout_str,
         .name = if (tab3) |idx| rest2[idx + 1 ..] else null,
+    };
+}
+
+fn parseWhitespaceWindowListLine(line: []const u8) ?WindowListLine {
+    const sp1 = std.mem.indexOfScalar(u8, line, ' ') orelse return null;
+    const id = std.fmt.parseInt(usize, line[1..sp1], 10) catch return null;
+
+    const rest1 = std.mem.trimLeft(u8, line[sp1 + 1 ..], " ");
+    const sp2 = std.mem.indexOfScalar(u8, rest1, ' ') orelse return null;
+    const active = std.mem.eql(u8, rest1[0..sp2], "1");
+
+    const rest2 = std.mem.trimLeft(u8, rest1[sp2 + 1 ..], " ");
+    const sp3 = std.mem.indexOfScalar(u8, rest2, ' ');
+    const layout_str = if (sp3) |idx| rest2[0..idx] else rest2;
+    if (layout_str.len == 0) return null;
+    return .{
+        .id = id,
+        .active = active,
+        .layout_str = layout_str,
+        .name = if (sp3) |idx| std.mem.trimLeft(u8, rest2[idx + 1 ..], " ") else null,
     };
 }
 
@@ -1134,6 +1178,33 @@ test "start enqueues the attach bootstrap commands" {
     const cmds = s.pendingCommands();
     try std.testing.expect(std.mem.indexOf(u8, cmds, "refresh-client -C 120x40\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, cmds, "list-windows") != null);
+    try std.testing.expect(std.mem.indexOfScalar(u8, cmds, '\t') == null);
+}
+
+test "SSH tty bootstrap replies keep printable separators and reconcile" {
+    var col = Collector{ .alloc = std.testing.allocator };
+    defer col.deinit();
+    var log = EventLog{ .alloc = std.testing.allocator };
+    defer log.deinit();
+    var s = Session.init(std.testing.allocator, col.sink(), 80, 24);
+    defer s.deinit();
+    s.events = log.eventSink();
+
+    try s.start();
+    try std.testing.expect(std.mem.indexOfScalar(u8, s.pendingCommands(), '\t') == null);
+
+    // A real `ssh -tt ... tmux -CC` attach first completes its own empty
+    // command block, then replies to the printable-space bootstrap queries.
+    try s.feed("\x1bP1000p%begin 1 1 0\n%end 1 1 0\n%session-changed $0 tui\n");
+    try s.feed("%begin 2 2 0\n@5 1 b262,80x24,0,0,5 TUI window\n%end 2 2 0\n");
+    try s.feed("%begin 3 3 0\n%5 /home/xzg/project with spaces pi\n%end 3 3 0\n");
+
+    try std.testing.expectEqual(@as(?usize, 5), log.layout_window);
+    try std.testing.expectEqual(@as(usize, 1), log.layout_panes);
+    try std.testing.expectEqualStrings("TUI window", s.findWindow(5).?.name.items);
+    try std.testing.expectEqual(@as(?usize, 5), log.last_pane_meta_id);
+    try std.testing.expectEqualStrings("/home/xzg/project with spaces", log.last_pane_meta_path.items);
+    try std.testing.expectEqualStrings("pi", log.last_pane_meta_cmd.items);
 }
 
 test "resizeClient updates size and queues a refresh" {
@@ -1147,14 +1218,37 @@ test "resizeClient updates size and queues a refresh" {
     try std.testing.expect(std.mem.indexOf(u8, s.pendingCommands(), "refresh-client -C 100x30\n") != null);
 }
 
-test "sendKeys hex-encodes raw bytes for a pane" {
+test "sendKeys uses tmux 2.7-compatible hexadecimal key names" {
     var col = Collector{ .alloc = std.testing.allocator };
     defer col.deinit();
     var s = Session.init(std.testing.allocator, col.sink(), 80, 24);
     defer s.deinit();
 
-    try s.sendKeys(4, "ls\n"); // l=0x6c s=0x73 \n=0x0a
-    try std.testing.expectEqualStrings("send-keys -t %4 -H 6c 73 0a\n", s.pendingCommands());
+    try s.sendKeys(4, "ls\n");
+    try std.testing.expectEqualStrings("send-keys -t %4 0x6c 0x73 0xa\n", s.pendingCommands());
+}
+
+test "sendKeys emits UTF-8 text as Unicode key names" {
+    var col = Collector{ .alloc = std.testing.allocator };
+    defer col.deinit();
+    var s = Session.init(std.testing.allocator, col.sink(), 80, 24);
+    defer s.deinit();
+
+    try s.sendKeys(4, "Ãé中");
+    try std.testing.expectEqualStrings("send-keys -t %4 0xc3 0xe9 0x4e2d\n", s.pendingCommands());
+}
+
+test "sendKeys preserves legacy mouse report bytes on tmux 2.7" {
+    var col = Collector{ .alloc = std.testing.allocator };
+    defer col.deinit();
+    var s = Session.init(std.testing.allocator, col.sink(), 80, 24);
+    defer s.deinit();
+
+    try s.sendKeys(5, "\x1b[MaC-");
+    try std.testing.expectEqualStrings(
+        "send-keys -t %5 0x1b 0x5b 0x4d 0x61 0x43 0x2d\n",
+        s.pendingCommands(),
+    );
 }
 
 test "splitPane emits split-window with the right orientation flag" {
