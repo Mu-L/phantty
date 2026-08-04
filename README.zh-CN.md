@@ -35,7 +35,7 @@
 - **AI 智能体会话** —— 启动 OpenAI 兼容的智能体标签页，配置 profile、恢复历史，导出完整或精简的 Markdown 对话记录
 - **命令中心副驾历史** —— 搜索已保存的 AI Chat 与 Copilot 侧栏对话，按日期分组，并可按侧栏/标签页来源筛选
 - **会话内切换模型** —— 输入 `/model` 或点击模型标签，把当前 AI Chat/Copilot 会话切到另一个已保存 profile，并用摘要交接上下文
-- **AI 历史浏览器** —— 浏览本地、WSL 与 SSH 上的 Codex / Claude Code / Reasonix 历史，并从原始项目目录恢复会话
+- **AI 历史浏览器** —— 浏览本地、WSL 与 SSH 上的 Codex / Claude Code / Kimi Code 历史，并从原始项目目录恢复会话
 - **Kitty 图形协议** —— 通过 `imgcat.py` / `pdfcat.py` 在远程 shell 中内联显示图片和 PDF
 - **可选的远程访问** —— 通过 Cloudflare 托管的中继分享会话密钥（默认关闭）
 

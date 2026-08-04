@@ -343,7 +343,7 @@ test {
     _ = @import("terminal_agents/sessions/types.zig");
     _ = @import("terminal_agents/sessions/provider_codex.zig");
     _ = @import("terminal_agents/sessions/provider_claude.zig");
-    _ = @import("terminal_agents/sessions/provider_reasonix.zig");
+    _ = @import("terminal_agents/sessions/provider_kimi.zig");
     _ = @import("terminal_agents/sessions/source.zig");
     _ = @import("terminal_agents/sessions/cache.zig");
     _ = @import("terminal_agents/sessions/markdown.zig");
