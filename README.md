@@ -36,7 +36,7 @@ English | [简体中文](README.zh-CN.md)
 - **AI Agent sessions** - launch OpenAI-compatible Agent tabs, configure profiles, restore history, export Markdown transcripts, and distill reusable local skills
 - **Command-center Copilot History** - search saved AI Chat and Copilot sidebar conversations, grouped by date, with source filters for sidebar vs tab sessions
 - **In-session model switching** - use `/model` or click the model label to move an active AI chat/Copilot session to another saved profile with a context summary handoff
-- **AI history browser** - browse local, WSL, and SSH Codex / Claude Code / Reasonix history and resume sessions from their original project directories
+- **AI history browser** - browse local, WSL, and SSH Codex / Claude Code / Kimi Code history and resume sessions from their original project directories
 - **Kitty Graphics protocol** - display inline images and PDFs from remote shells via `imgcat.py` / `pdfcat.py`
 - **Opt-in remote access** - share a session key over a Cloudflare-hosted relay (disabled by default)
 

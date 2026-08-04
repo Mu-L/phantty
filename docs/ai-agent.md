@@ -124,17 +124,20 @@ model. Press `Tab` to cycle the source filter between `All`, `Sidebar`, and
 remove it, and `Esc` to return to the normal command center.
 
 Open the session launcher with `Ctrl+Shift+T` and choose `Sessions` to browse
-Codex, Claude Code, and Reasonix transcripts stored on a Local, WSL, or SSH
-target. WispTerm connects to the selected target, scans `$HOME/.codex`,
-`$HOME/.claude`, and `$HOME/.reasonix` for metadata, and loads a transcript
-only when you open that row.
+Codex, Claude Code, and Kimi Code transcripts stored on a Local, WSL, or SSH
+target. WispTerm connects to the selected target and scans `$HOME/.codex`,
+`$HOME/.claude`, and `$HOME/.kimi-code/sessions`; it loads a transcript only
+when you open that row. For Kimi Code, WispTerm combines each session's
+`state.json` and `agents/main/wire.jsonl` with `$HOME/.kimi-code/session_index.jsonl`
+when an older session needs its original working directory restored.
 
 The `Subagent` category separates sessions whose title starts with `You are`;
 those sessions still appear under `All`.
 
 Use `Resume` to open a real terminal tab on the same target. WispTerm first
 checks the original project directory recorded in the history file; if that
-directory is missing, resume stops instead of falling back to `$HOME`.
+directory is missing, resume stops instead of falling back to `$HOME`. Kimi Code
+sessions resume with `kimi --session <session-id>`.
 
 The selected history row also supports local handoff actions: press `D` to
 download the provider's raw history file, `M` to export the parsed transcript as
