@@ -39,3 +39,6 @@ pub fn notificationAuthStatus() u8 {
 
 /// No authorization request needed on Linux.
 pub fn requestNotificationAuth() void {}
+
+/// notify-send spawns leave nothing to tear down.
+pub fn cleanup() void {}

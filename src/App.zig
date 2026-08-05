@@ -17,6 +17,7 @@ const platform_com = @import("platform/com.zig");
 const platform_display = @import("platform/display.zig");
 const font_backend = @import("platform/font_backend.zig");
 const platform_pty_command = @import("platform/pty_command.zig");
+const platform_notifications = @import("platform/notifications.zig");
 const platform_thread_control = @import("platform/thread_control.zig");
 const window_backend = @import("platform/window_backend.zig");
 const remote = @import("remote_client.zig");
@@ -166,6 +167,11 @@ next_window_y: ?i32 = null,
 // CWD for next spawned window (working directory inheritance)
 next_window_cwd: platform_pty_command.CwdBuffer = undefined,
 next_window_cwd_len: usize = 0,
+
+// Recipe file path for next spawned window (named-workspace restore). When
+// set, the new window restores this recipe instead of opening a default tab.
+next_window_recipe_path: [std.fs.max_path_bytes]u8 = undefined,
+next_window_recipe_path_len: usize = 0,
 
 // ============================================================================
 // Initialization
@@ -505,6 +511,21 @@ pub fn takeInitialCwd(self: *App, out_buf: *platform_pty_command.CwdBuffer) usiz
     @memcpy(out_buf[0..len], self.next_window_cwd[0..len]);
     out_buf[len] = 0;
     self.next_window_cwd_len = 0;
+    return len;
+}
+
+/// Take the recipe path staged for the next spawned window (copies into the
+/// provided buffer, clears source). Returns the path length, or 0 when no
+/// recipe was staged.
+pub fn takeInitialRecipePath(self: *App, out_buf: *[std.fs.max_path_bytes]u8) usize {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    if (self.next_window_recipe_path_len == 0) return 0;
+
+    const len = self.next_window_recipe_path_len;
+    @memcpy(out_buf[0..len], self.next_window_recipe_path[0..len]);
+    self.next_window_recipe_path_len = 0;
     return len;
 }
 
@@ -1055,6 +1076,21 @@ pub fn requestNewWindow(self: *App, parent_handle: ?window_backend.NativeHandle,
     };
 }
 
+/// Request a new window that restores the named-workspace recipe at
+/// `recipe_path` instead of opening a default tab. The path is staged in a
+/// slot (same pattern as next_window_cwd) and consumed by the new window's
+/// startup branch.
+pub fn requestNewWindowWithRecipe(self: *App, parent_handle: ?window_backend.NativeHandle, recipe_path: []const u8) void {
+    {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        const len = @min(recipe_path.len, self.next_window_recipe_path.len);
+        @memcpy(self.next_window_recipe_path[0..len], recipe_path[0..len]);
+        self.next_window_recipe_path_len = len;
+    }
+    self.requestNewWindow(parent_handle, null);
+}
+
 /// Thread entry point for spawned windows.
 fn windowThreadMain(app: *App) void {
     // Initialize the native UI thread apartment for platform backends.
@@ -1185,6 +1221,9 @@ pub fn deinit(self: *App) void {
     }
 
     self.port_forward_manager.deinit();
+
+    // Remove the Windows tray icon (no-op elsewhere) before the process exits.
+    platform_notifications.cleanup();
 
     // Free owned string copies
     self.allocator.free(self.font_family);

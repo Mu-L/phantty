@@ -436,11 +436,12 @@ pub fn copyAiChatSpanToClipboard(chat: *AppWindow.ai_chat.Session, message_index
     }
 }
 
-pub fn copySelectionToClipboard() void {
-    const surface = selectionSurfaceForClipboard() orelse return;
-    const allocator = AppWindow.g_allocator orelse return;
-
-    if (!surface.selection.active) return;
+/// Owned text of the given surface's active selection, or null when the
+/// surface has no active selection or the selection is empty. Caller frees.
+/// Holds the surface render-state lock while reading cells, so call it on the
+/// UI thread only.
+pub fn allocSelectionText(allocator: std.mem.Allocator, surface: *Surface) ?[]u8 {
+    if (!surface.selection.active) return null;
 
     var start_row = surface.selection.start_row;
     var start_col = surface.selection.start_col;
@@ -528,10 +529,28 @@ pub fn copySelectionToClipboard() void {
     }
     surface.render_state.mutex.unlock();
 
-    const text = selection_unit.joinSelectionRows(allocator, rows.items) catch return;
-    defer allocator.free(text);
+    const text = selection_unit.joinSelectionRows(allocator, rows.items) catch return null;
+    if (text.len == 0) {
+        allocator.free(text);
+        return null;
+    }
+    return text;
+}
 
-    if (text.len == 0) return;
+/// Owned text of the active terminal selection (the focused surface's, or any
+/// selected surface in the active tab), or null when nothing is selected.
+/// Caller frees.
+pub fn allocActiveSelectionText(allocator: std.mem.Allocator) ?[]u8 {
+    const surface = selectionSurfaceForClipboard() orelse return null;
+    return allocSelectionText(allocator, surface);
+}
+
+pub fn copySelectionToClipboard() void {
+    const surface = selectionSurfaceForClipboard() orelse return;
+    const allocator = AppWindow.g_allocator orelse return;
+
+    const text = allocSelectionText(allocator, surface) orelse return;
+    defer allocator.free(text);
 
     if (copyTextToClipboard(text)) {
         overlays.showCopyToast(text.len);

@@ -5,6 +5,8 @@ const session_persist = @import("../../session_persist.zig");
 const codex_provider = @import("provider_codex.zig");
 const claude_provider = @import("provider_claude.zig");
 const kimi_provider = @import("provider_kimi.zig");
+const opencode_provider = @import("provider_opencode.zig");
+const process_runner = @import("../../process_runner.zig");
 const remote_file = @import("../../platform/remote_file.zig");
 const ssh_connection = @import("../../ssh/connection.zig");
 const ai_history_cache = @import("cache.zig");
@@ -17,6 +19,14 @@ pub const MAX_TRANSCRIPT_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_REMOTE_METADATA_PREFIX_BYTES: usize = MAX_METADATA_FILE_BYTES - 4096;
 pub const MAX_SCAN_METADATA_FILES: usize = 256;
 pub const MAX_SCAN_METADATA_BYTES: u64 = 48 * 1024 * 1024;
+
+/// OpenCode is CLI-driven (SQLite storage), so scans/exports spawn the
+/// `opencode` binary instead of walking files. Bounded so a hung or chatty
+/// CLI degrades to a scan warning instead of wedging the worker thread.
+const OPENCODE_CLI_TIMEOUT_MS: u64 = 15_000;
+const OPENCODE_LIST_MAX_BYTES: usize = 4 * 1024 * 1024;
+const OPENCODE_EXPORT_MAX_BYTES: usize = 32 * 1024 * 1024;
+const OPENCODE_REMOTE_LIST_COMMAND = "opencode session list --format json 2>/dev/null";
 
 pub const ScanBudget = struct {
     max_files: usize = MAX_SCAN_METADATA_FILES,
@@ -130,7 +140,7 @@ pub const WslScannerHost = struct {
 
     fn loadTranscript(_: *anyopaque, allocator: std.mem.Allocator, meta: types.SessionMeta) ![]types.TranscriptMessage {
         var command_buf: [2048]u8 = undefined;
-        const command = try remoteCatCommand(meta.source_path, command_buf[0..]);
+        const command = try remoteTranscriptCommand(meta, command_buf[0..]);
         const bytes = remote_file.wslExecCapped(allocator, command, MAX_TRANSCRIPT_FILE_BYTES) orelse return error.RemoteExecFailed;
         defer allocator.free(bytes);
         return try parseTranscriptBytes(allocator, meta.provider, bytes);
@@ -163,7 +173,7 @@ pub const SshScannerHost = struct {
     fn loadTranscript(ctx: *anyopaque, allocator: std.mem.Allocator, meta: types.SessionMeta) ![]types.TranscriptMessage {
         const self: *SshScannerHost = @ptrCast(@alignCast(ctx));
         var command_buf: [2048]u8 = undefined;
-        const command = try remoteCatCommand(meta.source_path, command_buf[0..]);
+        const command = try remoteTranscriptCommand(meta, command_buf[0..]);
         const bytes = try remote_file.sshExecCaptureCapped(allocator, self.conn, command, MAX_TRANSCRIPT_FILE_BYTES);
         defer allocator.free(bytes);
         return try parseTranscriptBytes(allocator, meta.provider, bytes);
@@ -758,6 +768,7 @@ pub const Session = struct {
                 .codex => counts.codex += 1,
                 .claude => counts.claude += 1,
                 .kimi => counts.kimi += 1,
+                .opencode => counts.opencode += 1,
             }
         }
         return counts;
@@ -1039,6 +1050,9 @@ pub fn scanLocalFilesystemWithCacheSink(
             }
         }
     }
+    if (source.providers.opencode) {
+        try scanner.scanOpencodeCli();
+    }
     for (source.extra_roots) |root| {
         if (!providerEnabled(source, root.provider)) continue;
         try scanner.scanProviderRoot(root.provider, root.path);
@@ -1074,6 +1088,13 @@ pub fn scanLocalFilesystemWithCacheSink(
 }
 
 pub fn loadLocalTranscript(allocator: std.mem.Allocator, meta: types.SessionMeta) ![]types.TranscriptMessage {
+    if (meta.provider == .opencode) {
+        const argv = [_][]const u8{ "opencode", "export", meta.session_id };
+        const bytes = try runOpencodeCli(allocator, &argv, OPENCODE_EXPORT_MAX_BYTES);
+        defer allocator.free(bytes);
+        return try opencode_provider.parseTranscript(allocator, bytes);
+    }
+
     const bytes = if (std.fs.path.isAbsolute(meta.source_path)) blk: {
         const file = try std.fs.openFileAbsolute(meta.source_path, .{});
         defer file.close();
@@ -1089,6 +1110,7 @@ fn parseTranscriptBytes(allocator: std.mem.Allocator, provider: types.ProviderId
         .codex => try codex_provider.parseTranscript(allocator, bytes),
         .claude => try claude_provider.parseTranscript(allocator, bytes),
         .kimi => try kimi_provider.parseTranscript(allocator, bytes),
+        .opencode => try opencode_provider.parseTranscript(allocator, bytes),
     };
 }
 
@@ -1117,7 +1139,7 @@ pub fn providerFindCommandPlain(provider: types.ProviderId, root: []const u8, ou
 fn providerFindRoot(provider: types.ProviderId, root: []const u8, out: []u8) ![]const u8 {
     const trimmed = std.mem.trimRight(u8, root, "/\\");
     return switch (provider) {
-        .codex, .claude => root,
+        .codex, .claude, .opencode => root,
         .kimi => if (pathEndsWithSegment(trimmed, "sessions"))
             trimmed
         else
@@ -1162,6 +1184,20 @@ pub fn remoteCatCommand(path: []const u8, out: []u8) ![]const u8 {
     var quoted_buf: [1024]u8 = undefined;
     const quoted = remote_file.shellQuote(&quoted_buf, path) orelse return error.CommandTooLong;
     return std.fmt.bufPrint(out, "cat {s}", .{quoted}) catch error.CommandTooLong;
+}
+
+/// OpenCode transcripts are exported through the CLI, not read from a file.
+pub fn opencodeExportCommand(session_id: []const u8, out: []u8) ![]const u8 {
+    var quoted_buf: [1024]u8 = undefined;
+    const quoted = remote_file.shellQuote(&quoted_buf, session_id) orelse return error.CommandTooLong;
+    return std.fmt.bufPrint(out, "opencode export {s} 2>/dev/null", .{quoted}) catch error.CommandTooLong;
+}
+
+/// Remote transcript command for a row: file cat for the file-based providers,
+/// CLI export for OpenCode.
+fn remoteTranscriptCommand(meta: types.SessionMeta, out: []u8) ![]const u8 {
+    if (meta.provider == .opencode) return opencodeExportCommand(meta.session_id, out);
+    return remoteCatCommand(meta.source_path, out);
 }
 
 pub fn remoteHeadCommand(path: []const u8, byte_count: usize, out: []u8) ![]const u8 {
@@ -1234,6 +1270,9 @@ pub fn scanRemoteFilesystemSink(allocator: std.mem.Allocator, source: source_mod
             }
         }
     }
+    if (source.providers.opencode) {
+        try scanner.scanOpencodeCli();
+    }
     for (source.extra_roots) |root| {
         if (!providerEnabled(source, root.provider)) continue;
         try scanner.scanProviderRoot(root.provider, root.path);
@@ -1268,7 +1307,7 @@ pub fn scanRemoteFilesystemSink(allocator: std.mem.Allocator, source: source_mod
 
 pub fn loadRemoteTranscript(allocator: std.mem.Allocator, host: RemoteExecHost, meta: types.SessionMeta) ![]types.TranscriptMessage {
     var command_buf: [2048]u8 = undefined;
-    const command = try remoteCatCommand(meta.source_path, command_buf[0..]);
+    const command = try remoteTranscriptCommand(meta, command_buf[0..]);
     const bytes = try host.exec(host.ctx, allocator, command);
     defer allocator.free(bytes);
 
@@ -1286,6 +1325,7 @@ pub fn freeTranscript(allocator: std.mem.Allocator, provider: types.ProviderId, 
         .codex => codex_provider.freeTranscript(allocator, messages),
         .claude => claude_provider.freeTranscript(allocator, messages),
         .kimi => kimi_provider.freeTranscript(allocator, messages),
+        .opencode => opencode_provider.freeTranscript(allocator, messages),
     }
 }
 
@@ -1376,6 +1416,49 @@ const RowEmitter = struct {
     }
 };
 
+/// Run the `opencode` CLI locally and return owned stdout. Spawn failure,
+/// non-zero exit, timeout, and cancellation all collapse to
+/// error.OpencodeCliFailed so callers degrade to a scan warning.
+fn runOpencodeCli(allocator: std.mem.Allocator, argv: []const []const u8, max_stdout_bytes: usize) ![]u8 {
+    var result = process_runner.runCapture(allocator, argv, .{
+        .timeout_ms = OPENCODE_CLI_TIMEOUT_MS,
+        .max_stdout_bytes = max_stdout_bytes,
+        .max_stderr_bytes = 64 * 1024,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.SpawnFailed => return error.OpencodeCliFailed,
+    };
+    defer result.deinit(allocator);
+    if (result.timed_out or result.cancelled) return error.OpencodeCliFailed;
+    switch (result.termination) {
+        .exited => |code| if (code != 0) return error.OpencodeCliFailed,
+        .killed => return error.OpencodeCliFailed,
+    }
+    return try allocator.dupe(u8, result.stdout);
+}
+
+/// Parse `opencode session list --format json` output and emit one row per
+/// session. Rows bypass the file-candidate cache: the CLI is the scan, so
+/// there is no per-file work to skip. Non-JSON noise (e.g. an older CLI
+/// printing a table) counts as one warning instead of failing the scan.
+fn emitOpencodeSessionList(allocator: std.mem.Allocator, emitter: *RowEmitter, warning_count: *u32, json_bytes: []const u8) !void {
+    const metas = try opencode_provider.parseSessionList(allocator, json_bytes);
+    defer allocator.free(metas);
+    if (metas.len == 0) {
+        const trimmed = std.mem.trim(u8, json_bytes, " \t\r\n");
+        if (trimmed.len > 0 and !std.mem.startsWith(u8, trimmed, "[")) warning_count.* += 1;
+        return;
+    }
+
+    var emitted: usize = 0;
+    defer for (metas[emitted..]) |meta| freeMetadata(allocator, meta);
+    for (metas) |meta| {
+        if (emitter.aborted) break;
+        try emitter.emit(meta);
+        emitted += 1;
+    }
+}
+
 const LocalScan = struct {
     const Candidate = struct {
         provider: types.ProviderId,
@@ -1411,6 +1494,9 @@ const LocalScan = struct {
     }
 
     fn scanProviderRoot(self: *LocalScan, provider: types.ProviderId, root: []const u8) !void {
+        // OpenCode has no on-disk session files; its rows come from the CLI scan.
+        if (provider == .opencode) return;
+
         var dir = std.fs.openDirAbsolute(root, .{ .iterate = true }) catch |err| switch (err) {
             error.FileNotFound, error.NotDir => return,
             else => {
@@ -1421,6 +1507,19 @@ const LocalScan = struct {
         defer dir.close();
 
         try self.walkDir(provider, root, dir);
+    }
+
+    fn scanOpencodeCli(self: *LocalScan) !void {
+        const argv = [_][]const u8{ "opencode", "session", "list", "--format", "json" };
+        const bytes = runOpencodeCli(self.allocator, &argv, OPENCODE_LIST_MAX_BYTES) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.OpencodeCliFailed => {
+                self.warning_count += 1;
+                return;
+            },
+        };
+        defer self.allocator.free(bytes);
+        try emitOpencodeSessionList(self.allocator, &self.emitter, &self.warning_count, bytes);
     }
 
     fn walkDir(self: *LocalScan, provider: types.ProviderId, abs_path: []const u8, dir: std.fs.Dir) !void {
@@ -1534,6 +1633,8 @@ const LocalScan = struct {
             .codex => codex_provider.parseMetadata(self.allocator, candidate.path, bytes),
             .claude => claude_provider.parseMetadata(self.allocator, candidate.path, bytes),
             .kimi => self.parseKimiMetadata(candidate, bytes),
+            // OpenCode rows come from scanOpencodeCli; file candidates never carry it.
+            .opencode => unreachable,
         }) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
         };
@@ -1621,6 +1722,7 @@ fn providerRootForPath(source: source_mod.Source, provider: types.ProviderId, so
         .codex => source.codex_root_override,
         .claude => source.claude_root_override,
         .kimi => source.kimi_root_override,
+        .opencode => source.opencode_root_override,
     };
     if (explicit) |root| return root;
     for (source.extra_roots) |root| {
@@ -1647,6 +1749,9 @@ const RemoteScan = struct {
     }
 
     fn scanProviderRoot(self: *RemoteScan, provider: types.ProviderId, root: []const u8) !void {
+        // OpenCode has no on-disk session files; its rows come from the CLI scan.
+        if (provider == .opencode) return;
+
         var find_buf: [2048]u8 = undefined;
         const find_cmd = providerFindCommand(provider, root, find_buf[0..]) catch {
             self.warning_count += 1;
@@ -1686,6 +1791,18 @@ const RemoteScan = struct {
             try self.scanPath(provider, candidate.path, candidate.stamp);
             if (self.emitter.aborted) break;
         }
+    }
+
+    fn scanOpencodeCli(self: *RemoteScan) !void {
+        const bytes = self.host.exec(self.host.ctx, self.allocator, OPENCODE_REMOTE_LIST_COMMAND) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                self.warning_count += 1;
+                return;
+            },
+        };
+        defer self.allocator.free(bytes);
+        try emitOpencodeSessionList(self.allocator, &self.emitter, &self.warning_count, bytes);
     }
 
     fn scanPath(self: *RemoteScan, provider: types.ProviderId, path: []const u8, stamp: ai_history_cache.FileStamp) !void {
@@ -1732,6 +1849,8 @@ const RemoteScan = struct {
             .codex => codex_provider.parseMetadata(self.allocator, path, bytes),
             .claude => claude_provider.parseMetadata(self.allocator, path, bytes),
             .kimi => self.parseKimiMetadata(path, bytes),
+            // OpenCode rows come from scanOpencodeCli; remote paths never carry it.
+            .opencode => unreachable,
         }) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
         };
@@ -1811,6 +1930,7 @@ fn providerEnabled(source: source_mod.Source, provider: types.ProviderId) bool {
         .codex => source.providers.codex,
         .claude => source.providers.claude,
         .kimi => source.providers.kimi,
+        .opencode => source.providers.opencode,
     };
 }
 
@@ -1818,6 +1938,7 @@ fn providerAcceptsJsonl(provider: types.ProviderId, abs_dir: []const u8, name: [
     if (!std.mem.endsWith(u8, name, ".jsonl")) return false;
     return switch (provider) {
         .codex, .claude => true,
+        .opencode => false,
         .kimi => std.mem.eql(u8, name, "wire.jsonl") and
             std.mem.eql(u8, std.fs.path.basename(abs_dir), "main") and
             if (std.fs.path.dirname(abs_dir)) |parent|
@@ -1952,6 +2073,7 @@ fn cloneSource(allocator: std.mem.Allocator, source: source_mod.Source) !source_
         .codex_root_override = null,
         .claude_root_override = null,
         .kimi_root_override = null,
+        .opencode_root_override = null,
         .extra_roots = &.{},
     };
     errdefer freeOwnedSource(allocator, &cloned);
@@ -1966,6 +2088,7 @@ fn cloneSource(allocator: std.mem.Allocator, source: source_mod.Source) !source_
     cloned.codex_root_override = try cloneOptionalSlice(allocator, source.codex_root_override);
     cloned.claude_root_override = try cloneOptionalSlice(allocator, source.claude_root_override);
     cloned.kimi_root_override = try cloneOptionalSlice(allocator, source.kimi_root_override);
+    cloned.opencode_root_override = try cloneOptionalSlice(allocator, source.opencode_root_override);
     cloned.extra_roots = try cloneProviderRoots(allocator, source.extra_roots);
 
     return cloned;
@@ -2015,6 +2138,7 @@ fn freeOwnedSource(allocator: std.mem.Allocator, source: *source_mod.Source) voi
     if (source.codex_root_override) |value| freeSlice(allocator, value);
     if (source.claude_root_override) |value| freeSlice(allocator, value);
     if (source.kimi_root_override) |value| freeSlice(allocator, value);
+    if (source.opencode_root_override) |value| freeSlice(allocator, value);
     for (source.extra_roots) |root| {
         freeSlice(allocator, root.path);
     }
@@ -2076,6 +2200,14 @@ const FakeRemoteHost = struct {
         \\{"sessionId":"session_remote","workDir":"/home/me/kimi-project","sessionDir":"/home/me/.kimi-code/sessions/wd_project/session_remote"}
         \\
     ;
+    const opencode_list_json =
+        \\[{"id":"ses_remote1","title":"Remote OpenCode","created":1780221600000,"updated":1780221660000,"projectId":"global","directory":"/home/me/oc-project"}]
+        \\
+    ;
+    const opencode_export_json =
+        \\{"info":{"id":"ses_remote1"},"messages":[{"info":{"role":"user","time":{"created":1780221600000}},"parts":[{"type":"text","text":"remote opencode"}]}]}
+        \\
+    ;
 
     pub fn remoteExecHost(self: *FakeRemoteHost) RemoteExecHost {
         return .{ .ctx = self, .exec = exec };
@@ -2084,6 +2216,12 @@ const FakeRemoteHost = struct {
     fn exec(_: *anyopaque, allocator: std.mem.Allocator, command: []const u8) ![]u8 {
         if (std.mem.eql(u8, command, remote_file.wslHomeCommand())) {
             return try allocator.dupe(u8, "/home/me\n");
+        }
+        if (std.mem.eql(u8, command, "opencode session list --format json 2>/dev/null")) {
+            return try allocator.dupe(u8, opencode_list_json);
+        }
+        if (std.mem.eql(u8, command, "opencode export 'ses_remote1' 2>/dev/null")) {
+            return try allocator.dupe(u8, opencode_export_json);
         }
         if (std.mem.startsWith(u8, command, "find")) {
             // Emit "<mtime>\t<size>\t<path>" (the new -printf form) for the matching root.
@@ -2404,7 +2542,7 @@ test "ai_history_session: remote scan uses fake host JSONL bytes" {
     }, fake.remoteExecHost());
     defer freeScanResult(allocator, result);
 
-    try std.testing.expectEqual(@as(usize, 3), result.rows.len);
+    try std.testing.expectEqual(@as(usize, 4), result.rows.len);
     try std.testing.expectEqual(@as(u32, 0), result.warning_count);
     try std.testing.expectEqual(types.ProviderId.codex, result.rows[0].provider);
     try std.testing.expectEqualStrings("codex-abc", result.rows[0].session_id);
@@ -2415,6 +2553,31 @@ test "ai_history_session: remote scan uses fake host JSONL bytes" {
     try std.testing.expectEqualStrings("session_remote", result.rows[2].session_id);
     try std.testing.expectEqualStrings("/home/me/kimi-project", result.rows[2].project_dir);
     try std.testing.expectEqualStrings("Remote Kimi", result.rows[2].summary);
+    try std.testing.expectEqual(types.ProviderId.opencode, result.rows[3].provider);
+    try std.testing.expectEqualStrings("ses_remote1", result.rows[3].session_id);
+    try std.testing.expectEqualStrings("Remote OpenCode", result.rows[3].title);
+    try std.testing.expectEqualStrings("/home/me/oc-project", result.rows[3].project_dir);
+    try std.testing.expectEqual(types.ResumeKind.opencode_resume, result.rows[3].resume_kind);
+    try std.testing.expectEqual(@as(i64, 1780221660000), result.rows[3].last_active_at_ms);
+}
+
+test "ai_history_session: remote opencode transcript loads through the CLI export command" {
+    const allocator = std.testing.allocator;
+    var fake = FakeRemoteHost{};
+    const meta: types.SessionMeta = .{
+        .provider = .opencode,
+        .session_id = "ses_remote1",
+        .title = "Remote OpenCode",
+        .project_dir = "/home/me/oc-project",
+        .source_path = "ses_remote1",
+        .resume_kind = .opencode_resume,
+    };
+    const messages = try loadRemoteTranscript(allocator, fake.remoteExecHost(), meta);
+    defer freeTranscript(allocator, .opencode, messages);
+
+    try std.testing.expectEqual(@as(usize, 1), messages.len);
+    try std.testing.expectEqual(types.MessageRole.user, messages[0].role);
+    try std.testing.expectEqualStrings("remote opencode", messages[0].content);
 }
 
 test "ai_history_session: remote scan keeps oversized codex metadata from prefix" {
@@ -2457,7 +2620,7 @@ test "ai_history_session: remote scan keeps oversized codex metadata from prefix
         .id = "wsl",
         .name = "WSL",
         .target = .{ .wsl = .{} },
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, host_state.host());
     defer freeScanResult(allocator, result);
 
@@ -2864,7 +3027,7 @@ test "ai_history_session: scanLocalFilesystem reads codex and claude jsonl files
 
     var home_buf: [std.fs.max_path_bytes]u8 = undefined;
     const home = try tmp.dir.realpath(".", &home_buf);
-    const result = try scanLocalFilesystem(allocator, .{ .id = "local", .name = "Local", .target = .local }, home);
+    const result = try scanLocalFilesystem(allocator, .{ .id = "local", .name = "Local", .target = .local, .providers = .{ .opencode = false } }, home);
     defer freeScanResult(allocator, result);
 
     try std.testing.expectEqual(@as(usize, 2), result.rows.len);
@@ -2876,6 +3039,7 @@ test "ai_history_session: scanLocalFilesystem reads codex and claude jsonl files
             .codex => codex_count += 1,
             .claude => claude_count += 1,
             .kimi => {},
+            .opencode => {},
         }
     }
     try std.testing.expectEqual(@as(usize, 1), codex_count);
@@ -2906,7 +3070,7 @@ test "ai_history_session: scanLocalFilesystem keeps oversized codex metadata fro
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home);
     defer freeScanResult(allocator, result);
 
@@ -2958,7 +3122,7 @@ test "ai_history_session: scanLocalFilesystem reads Kimi wire and state" {
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = false, .claude = false, .kimi = true },
+        .providers = .{ .codex = false, .claude = false, .kimi = true, .opencode = false },
     };
     const result = try scanLocalFilesystem(allocator, source, home);
     defer freeScanResult(allocator, result);
@@ -3051,7 +3215,7 @@ test "ai_history_session: scanLocalFilesystem skips unusable metadata with warni
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home);
     defer freeScanResult(allocator, result);
 
@@ -3084,7 +3248,7 @@ test "ai_history_session: scanLocalFilesystem budget returns partial rows with w
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home, .{ .max_files = 1, .max_bytes = 1024 * 1024 });
     defer freeScanResult(allocator, result);
 
@@ -3123,7 +3287,7 @@ test "ai_history_session: scanLocalFilesystem reuses unchanged cached metadata" 
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home, .{}, null);
     defer freeScanResult(allocator, first);
     try std.testing.expectEqual(@as(usize, 1), first.cache_update.records.len);
@@ -3142,7 +3306,7 @@ test "ai_history_session: scanLocalFilesystem reuses unchanged cached metadata" 
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home, .{}, .{ .records = @constCast(&records) });
     defer freeScanResult(allocator, result);
 
@@ -3229,6 +3393,8 @@ test "ai_history_session: cycleCategory wraps forward and backward" {
     try std.testing.expectEqual(types.CategoryFilter.claude, session.category);
     session.cycleCategory(1);
     try std.testing.expectEqual(types.CategoryFilter.kimi, session.category);
+    session.cycleCategory(1);
+    try std.testing.expectEqual(types.CategoryFilter.opencode, session.category);
     session.cycleCategory(1);
     try std.testing.expectEqual(types.CategoryFilter.subagent, session.category);
     session.cycleCategory(1);
@@ -3554,8 +3720,8 @@ test "ai_history_session: moveFilterCursor walks categories then dates, applying
     };
     try session.replaceRows(&rows);
 
-    // Combined list: All, Codex, Claude, Kimi, Subagent, All dates, 20260602, 20260601 => 8 rows.
-    try std.testing.expectEqual(@as(usize, 8), session.filterRowCount());
+    // Combined list: All, Codex, Claude, Kimi, OpenCode, Subagent, All dates, 20260602, 20260601 => 9 rows.
+    try std.testing.expectEqual(@as(usize, 9), session.filterRowCount());
     try std.testing.expectEqual(types.CategoryFilter.all, session.category);
 
     session.moveFilterCursor(1); // -> Codex
@@ -3564,6 +3730,8 @@ test "ai_history_session: moveFilterCursor walks categories then dates, applying
     try std.testing.expectEqual(types.CategoryFilter.claude, session.category);
     session.moveFilterCursor(1); // -> Kimi
     try std.testing.expectEqual(types.CategoryFilter.kimi, session.category);
+    session.moveFilterCursor(1); // -> OpenCode
+    try std.testing.expectEqual(types.CategoryFilter.opencode, session.category);
     session.moveFilterCursor(1); // -> Subagent
     try std.testing.expectEqual(types.CategoryFilter.subagent, session.category);
     session.moveFilterCursor(1); // -> All dates (date filter cleared, category kept)
@@ -3824,7 +3992,7 @@ test "ai_history_session: local scan with sink streams rows and returns empty no
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home, .{}, null, collect.sink());
     defer freeScanResult(allocator, result);
 
@@ -3847,7 +4015,7 @@ test "ai_history_session: remote scan with sink streams rows and returns empty n
         .id = "wsl",
         .name = "WSL",
         .target = .{ .wsl = .{} },
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, host, null, collect.sink());
     defer freeScanResult(allocator, result);
 
@@ -3949,7 +4117,7 @@ test "ai_history_session: local scan warm cache publishes provisional batch then
         .id = "local",
         .name = "Local",
         .target = .local,
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, home, .{}, cache, collect.sink());
     defer freeScanResult(allocator, result);
 
@@ -4023,7 +4191,7 @@ test "ai_history_session: remote scan skips cat on cache hit" {
         .id = "wsl",
         .name = "WSL",
         .target = .{ .wsl = .{} },
-        .providers = .{ .codex = true, .claude = false, .kimi = false },
+        .providers = .{ .codex = true, .claude = false, .kimi = false, .opencode = false },
     }, host, cache, null);
     defer freeScanResult(allocator, result);
 
