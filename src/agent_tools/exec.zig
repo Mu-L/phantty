@@ -943,11 +943,7 @@ fn unixSessionExecTool(ctx: *ToolContext, kind: UnixSessionKind, surface_id: []c
     // dropped from history. At most the very first line can leak. The user's own
     // typed commands are unaffected. (fish is not supported here, as it already
     // isn't by the bash-syntax wrapper.)
-    const wrapped = try std.fmt.allocPrint(
-        ctx.allocator,
-        " setopt hist_ignore_space 2>/dev/null; HISTCONTROL=ignorespace; printf '\\n__WISPTERM_AGENT_START_{d}__\\n'; {{ {s}; }} 2>&1; __wispterm_agent_status=$?; printf '\\n__WISPTERM_AGENT_END_{d}__:%s\\n' \"$__wispterm_agent_status\"\r",
-        .{ nonce, command, nonce },
-    );
+    const wrapped = try allocUnixSessionCommand(ctx.allocator, nonce, command);
     defer ctx.allocator.free(wrapped);
 
     if (!host.writeSurface(host.ctx, surface.id, surface.ptr, wrapped)) {
@@ -959,6 +955,14 @@ fn unixSessionExecTool(ctx: *ToolContext, kind: UnixSessionKind, surface_id: []c
     const end_marker = try std.fmt.allocPrint(ctx.allocator, "__WISPTERM_AGENT_END_{d}__", .{nonce});
     defer ctx.allocator.free(end_marker);
     return waitForSentinelResult(ctx, host, surface, kind.label(), start_marker, end_marker, timeout_ms);
+}
+
+fn allocUnixSessionCommand(allocator: std.mem.Allocator, nonce: i64, command: []const u8) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        " setopt hist_ignore_space 2>/dev/null; HISTCONTROL=ignorespace; printf '\\n__WISPTERM_AGENT_START_{d}__\\n'; {{ {s}; }} 2>&1; __wispterm_agent_status=$?; printf '\\n__WISPTERM_AGENT_END_{d}__:%s\\n' \"$__wispterm_agent_status\"\r",
+        .{ nonce, std.mem.trimRight(u8, command, "\r\n"), nonce },
+    );
 }
 
 /// Timeout result for a sentinel command that never reported completion. Frames
@@ -1244,6 +1248,19 @@ test "shell exec refuses bare REPL launchers but allows run-and-exit invocations
     for (allowed) |cmd| {
         try std.testing.expect((try shellExecBareReplRefusal(allocator, .wsl, cmd)) == null);
     }
+}
+
+test "shell exec trims trailing newlines before wrapping multiline commands" {
+    const allocator = std.testing.allocator;
+    const wrapped = try allocUnixSessionCommand(allocator, 123, "python3 -c \"\nprint(1)\n\"\n");
+    defer allocator.free(wrapped);
+
+    try std.testing.expect(std.mem.indexOf(u8, wrapped, "python3 -c \"\nprint(1)\n\"; }") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wrapped, "\n; }") == null);
+
+    const escaped_space = try allocUnixSessionCommand(allocator, 123, "printf foo\\ \n");
+    defer allocator.free(escaped_space);
+    try std.testing.expect(std.mem.indexOf(u8, escaped_space, "printf foo\\ ; }") != null);
 }
 
 test "extractPromptLine returns the trailing non-empty prompt line" {
