@@ -266,6 +266,12 @@ pub const Window = struct {
     // -----------------------------------------------------------------------
 
     pub fn pollEvents(self: *Window) bool {
+        // Non-blocking drain of all pending SDL events. This mirrors the macOS/Windows
+        // behavior where pollEvents actively pumps the platform event queue rather than
+        // being a pure liveness check. Without this, SDL events accumulate unprocessed
+        // until the render gate blocks (rare when overlays are active), causing input
+        // to appear frozen while the loop burns CPU redrawing the same state.
+        pumpAppEvents(0);
         return !self.close_requested;
     }
 
