@@ -354,12 +354,12 @@ fn hitTest(
     const config_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
     const help_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
     const copilot_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
-    
+
     const caption_start = self.width - cap_w * 3;
     const config_x = caption_start - config_w;
     const help_x = config_x - help_w;
     const copilot_x = help_x - copilot_w;
-    
+
     const exclusions = [_]window_drag_region.Rect{
         // Toggle/hamburger button at left
         .{ .x = 0, .y = 0, .w = toggle_w, .h = self.titlebar_height },
