@@ -514,35 +514,22 @@ fn processEvent(event: c.SDL_Event) void {
             if (g_registry.find(win_id)) |ptr| {
                 const w: *Window = @ptrCast(@alignCast(ptr));
                 const m = keymap.modifiers(@intCast(event.key.mod));
-                
-                // Try scancode first for special keys (arrows, F-keys, etc.)
                 const sc: u32 = @intCast(event.key.scancode);
-                if (keymap.keyCodeFromScancode(sc)) |code| {
+                const code = keymap.keyCodeFromScancode(sc) orelse blk: {
+                    // Printable keys normally arrive via TEXT_INPUT. With a
+                    // shortcut modifier, map the logical keycode (then scancode)
+                    // so Ctrl+V / Ctrl+Shift+P / Ctrl+Shift+= reach keybinds.
+                    if (!(m.ctrl or m.alt or m.super)) break :blk null;
+                    break :blk keymap.shortcutKeyCode(sc, @intCast(event.key.key));
+                };
+                if (code) |key_code| {
                     w.key_events.push(.{
-                        .key_code = code,
+                        .key_code = key_code,
                         .ctrl = m.ctrl,
                         .shift = m.shift,
                         .alt = m.alt,
                         .super = m.super,
                     });
-                } else {
-                    // Scancode didn't map to a special key. If any modifier
-                    // (Ctrl, Alt, Super) is pressed, this is likely a shortcut,
-                    // so try the SDL keycode (logical key) for alphanumerics.
-                    // Without modifiers, let it go to TEXT_INPUT.
-                    const has_shortcut_mod = m.ctrl or m.alt or m.super;
-                    if (has_shortcut_mod) {
-                        const kc: u32 = @intCast(event.key.key);
-                        if (keymap.keyCodeFromSdlKeycode(kc)) |code| {
-                            w.key_events.push(.{
-                                .key_code = code,
-                                .ctrl = m.ctrl,
-                                .shift = m.shift,
-                                .alt = m.alt,
-                                .super = m.super,
-                            });
-                        }
-                    }
                 }
             }
         },

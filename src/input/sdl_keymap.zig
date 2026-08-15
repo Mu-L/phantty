@@ -41,30 +41,43 @@ pub fn keyCodeFromScancode(scancode: u32) ?ev.KeyCode {
 
 /// SDL3 keycode → neutral KeyCode for alphanumeric and punctuation keys.
 /// Returns uppercase letters ('A'-'Z'), digits ('0'-'9'), and common punctuation.
-/// Returns null for keys that should be handled via scancode or text input.
+/// Also accepts Ctrl-letter control codes (0x01-0x1A) that some X11 paths emit.
 pub fn keyCodeFromSdlKeycode(keycode: u32) ?ev.KeyCode {
-    // SDL keycodes for lowercase letters are 'a'-'z' (97-122)
-    // SDL keycodes for uppercase letters are 'A'-'Z' (65-90)
-    // Convert lowercase to uppercase for consistency with Windows/macOS keybind system
-    if (keycode >= 'a' and keycode <= 'z') {
-        return keycode - ('a' - 'A');
-    }
-    // Uppercase letters and digits are their ASCII values
-    if ((keycode >= 'A' and keycode <= 'Z') or (keycode >= '0' and keycode <= '9')) {
-        return keycode;
-    }
-    // Common punctuation that may be used in shortcuts
-    // These match the Key constants in keybind.zig
+    // Some Linux/X11 paths report Ctrl+V as 0x16 rather than 'v'.
+    if (keycode >= 1 and keycode <= 26) return 'A' + (keycode - 1);
+    if (keycode >= 'a' and keycode <= 'z') return keycode - ('a' - 'A');
+    if ((keycode >= 'A' and keycode <= 'Z') or (keycode >= '0' and keycode <= '9')) return keycode;
     return switch (keycode) {
-        '`' => 0xC0, // backquote
-        ',' => 0xBC, // comma
-        '+' => 0xBB, // plus
-        '=' => 0xBB, // equal (same as plus for keybinds)
-        '-' => 0xBD, // minus
+        '`' => 0xC0, // backquote / Key.backquote
+        ',' => 0xBC, // comma / Key.comma
+        '+', '=' => 0xBB, // plus/equal / Key.plus
+        '-' => 0xBD, // minus / Key.minus
         '[' => 0xDB, // bracket_left
         ']' => 0xDD, // bracket_right
         else => null,
     };
+}
+
+/// SDL3 scancode → shortcut KeyCode for letters, digits, and punctuation used
+/// by default keybinds. Used when the logical keycode is 0 / unmapped.
+pub fn keyCodeFromShortcutScancode(scancode: u32) ?ev.KeyCode {
+    return switch (scancode) {
+        4...29 => 'A' + (scancode - 4), // SDL_SCANCODE_A..Z
+        30...38 => '1' + (scancode - 30), // SDL_SCANCODE_1..9
+        39 => '0', // SDL_SCANCODE_0
+        45 => 0xBD, // SDL_SCANCODE_MINUS
+        46 => 0xBB, // SDL_SCANCODE_EQUALS (Key.plus)
+        47 => 0xDB, // SDL_SCANCODE_LEFTBRACKET
+        48 => 0xDD, // SDL_SCANCODE_RIGHTBRACKET
+        53 => 0xC0, // SDL_SCANCODE_GRAVE
+        54 => 0xBC, // SDL_SCANCODE_COMMA
+        else => null,
+    };
+}
+
+/// Layout-aware shortcut key first (keycode), then physical scancode fallback.
+pub fn shortcutKeyCode(scancode: u32, keycode: u32) ?ev.KeyCode {
+    return keyCodeFromSdlKeycode(keycode) orelse keyCodeFromShortcutScancode(scancode);
 }
 
 /// SDL3 keymod bitmask (KMOD_*) → neutral modifier flags.
@@ -96,17 +109,32 @@ test "modifier bitmask decodes to neutral flags" {
 }
 
 test "SDL keycode maps alphanumeric keys to uppercase for shortcuts" {
-    // Lowercase letters convert to uppercase
     try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), keyCodeFromSdlKeycode('v'));
     try std.testing.expectEqual(@as(?ev.KeyCode, 'P'), keyCodeFromSdlKeycode('p'));
     try std.testing.expectEqual(@as(?ev.KeyCode, 'C'), keyCodeFromSdlKeycode('c'));
-    // Uppercase letters pass through
     try std.testing.expectEqual(@as(?ev.KeyCode, 'A'), keyCodeFromSdlKeycode('A'));
-    // Digits pass through
     try std.testing.expectEqual(@as(?ev.KeyCode, '1'), keyCodeFromSdlKeycode('1'));
     try std.testing.expectEqual(@as(?ev.KeyCode, '9'), keyCodeFromSdlKeycode('9'));
-    // Common punctuation used in shortcuts
-    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('+')); // plus
-    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('=')); // equal (same as plus)
-    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBD), keyCodeFromSdlKeycode('-')); // minus
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('+'));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('='));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBD), keyCodeFromSdlKeycode('-'));
+    // X11-style Ctrl+letter control codes
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), keyCodeFromSdlKeycode(0x16));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'P'), keyCodeFromSdlKeycode(0x10));
+}
+
+test "shortcut scancodes map letters and plus/minus keys" {
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'A'), keyCodeFromShortcutScancode(4));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), keyCodeFromShortcutScancode(25));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'P'), keyCodeFromShortcutScancode(19));
+    try std.testing.expectEqual(@as(?ev.KeyCode, '1'), keyCodeFromShortcutScancode(30));
+    try std.testing.expectEqual(@as(?ev.KeyCode, '0'), keyCodeFromShortcutScancode(39));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromShortcutScancode(46));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBD), keyCodeFromShortcutScancode(45));
+}
+
+test "shortcutKeyCode prefers logical keycode then scancode" {
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), shortcutKeyCode(25, 'v'));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), shortcutKeyCode(25, 0));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), shortcutKeyCode(46, '='));
 }
