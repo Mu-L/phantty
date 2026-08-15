@@ -503,14 +503,21 @@ fn processEvent(event: c.SDL_Event) void {
         // ---------------------------------------------------------------
         // Keyboard: key-down → KeyEvent (key-up discarded; no press/release
         //           in neutral layer), text-input → CharEvent.
+        //
+        // SDL3 provides both scancode (hardware position) and keycode (logical
+        // key). Special keys (arrows, F-keys, etc.) use scancode; alphanumeric
+        // keys with modifiers (Ctrl+V, Ctrl+Shift+P, etc.) use keycode so the
+        // keybind system can match them regardless of keyboard layout.
         // ---------------------------------------------------------------
         c.SDL_EVENT_KEY_DOWN => {
             const win_id = event.key.windowID;
             if (g_registry.find(win_id)) |ptr| {
                 const w: *Window = @ptrCast(@alignCast(ptr));
+                const m = keymap.modifiers(@intCast(event.key.mod));
+                
+                // Try scancode first for special keys (arrows, F-keys, etc.)
                 const sc: u32 = @intCast(event.key.scancode);
                 if (keymap.keyCodeFromScancode(sc)) |code| {
-                    const m = keymap.modifiers(@intCast(event.key.mod));
                     w.key_events.push(.{
                         .key_code = code,
                         .ctrl = m.ctrl,
@@ -518,6 +525,24 @@ fn processEvent(event: c.SDL_Event) void {
                         .alt = m.alt,
                         .super = m.super,
                     });
+                } else {
+                    // Scancode didn't map to a special key. If any modifier
+                    // (Ctrl, Alt, Super) is pressed, this is likely a shortcut,
+                    // so try the SDL keycode (logical key) for alphanumerics.
+                    // Without modifiers, let it go to TEXT_INPUT.
+                    const has_shortcut_mod = m.ctrl or m.alt or m.super;
+                    if (has_shortcut_mod) {
+                        const kc: u32 = @intCast(event.key.key);
+                        if (keymap.keyCodeFromSdlKeycode(kc)) |code| {
+                            w.key_events.push(.{
+                                .key_code = code,
+                                .ctrl = m.ctrl,
+                                .shift = m.shift,
+                                .alt = m.alt,
+                                .super = m.super,
+                            });
+                        }
+                    }
                 }
             }
         },

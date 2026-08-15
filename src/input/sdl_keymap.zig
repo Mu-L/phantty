@@ -39,6 +39,34 @@ pub fn keyCodeFromScancode(scancode: u32) ?ev.KeyCode {
     };
 }
 
+/// SDL3 keycode → neutral KeyCode for alphanumeric and punctuation keys.
+/// Returns uppercase letters ('A'-'Z'), digits ('0'-'9'), and common punctuation.
+/// Returns null for keys that should be handled via scancode or text input.
+pub fn keyCodeFromSdlKeycode(keycode: u32) ?ev.KeyCode {
+    // SDL keycodes for lowercase letters are 'a'-'z' (97-122)
+    // SDL keycodes for uppercase letters are 'A'-'Z' (65-90)
+    // Convert lowercase to uppercase for consistency with Windows/macOS keybind system
+    if (keycode >= 'a' and keycode <= 'z') {
+        return keycode - ('a' - 'A');
+    }
+    // Uppercase letters and digits are their ASCII values
+    if ((keycode >= 'A' and keycode <= 'Z') or (keycode >= '0' and keycode <= '9')) {
+        return keycode;
+    }
+    // Common punctuation that may be used in shortcuts
+    // These match the Key constants in keybind.zig
+    return switch (keycode) {
+        '`' => 0xC0, // backquote
+        ',' => 0xBC, // comma
+        '+' => 0xBB, // plus
+        '=' => 0xBB, // equal (same as plus for keybinds)
+        '-' => 0xBD, // minus
+        '[' => 0xDB, // bracket_left
+        ']' => 0xDD, // bracket_right
+        else => null,
+    };
+}
+
 /// SDL3 keymod bitmask (KMOD_*) → neutral modifier flags.
 pub fn modifiers(mod: u16) Mods {
     return .{
@@ -65,4 +93,20 @@ test "modifier bitmask decodes to neutral flags" {
     try std.testing.expect(m.ctrl and m.shift and !m.alt and !m.super);
     const g = modifiers(0x0400); // KMOD_LGUI
     try std.testing.expect(g.super and !g.ctrl);
+}
+
+test "SDL keycode maps alphanumeric keys to uppercase for shortcuts" {
+    // Lowercase letters convert to uppercase
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'V'), keyCodeFromSdlKeycode('v'));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'P'), keyCodeFromSdlKeycode('p'));
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'C'), keyCodeFromSdlKeycode('c'));
+    // Uppercase letters pass through
+    try std.testing.expectEqual(@as(?ev.KeyCode, 'A'), keyCodeFromSdlKeycode('A'));
+    // Digits pass through
+    try std.testing.expectEqual(@as(?ev.KeyCode, '1'), keyCodeFromSdlKeycode('1'));
+    try std.testing.expectEqual(@as(?ev.KeyCode, '9'), keyCodeFromSdlKeycode('9'));
+    // Common punctuation used in shortcuts
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('+')); // plus
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBB), keyCodeFromSdlKeycode('=')); // equal (same as plus)
+    try std.testing.expectEqual(@as(?ev.KeyCode, 0xBD), keyCodeFromSdlKeycode('-')); // minus
 }
