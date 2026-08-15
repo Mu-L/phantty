@@ -6563,6 +6563,7 @@ fn onPlatformMessage(msg: window_backend.MessageId, wParam: window_backend.WordP
         toggleQuakeVisibility();
         return 1;
     }
+    if (platform_notifications.handleCallback(msg, wParam, lParam)) return 1;
 
     const decoded = thread_message.decode(msg, lParam) orelse return null;
     const agent_host = agentRequestHost();
@@ -7318,6 +7319,9 @@ fn ensureNotifAuthRequested(native_toast: bool) void {
 /// Z-terminate title/body (truncating to the notification limits) and show a
 /// native toast. Caller has already routed via `notif_mod.decideRoute`.
 fn showToastZ(title: []const u8, body: []const u8) void {
+    if (g_window) |win| {
+        platform_notifications.bindWindow(window_backend.nativeHandle(win));
+    }
     var title_z: [notif_mod.max_title + 1]u8 = undefined;
     var body_z: [notif_mod.max_body + 1]u8 = undefined;
     const t = title[0..@min(title.len, notif_mod.max_title)];
