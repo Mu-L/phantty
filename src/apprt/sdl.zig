@@ -131,6 +131,16 @@ pub const Window = struct {
     ime_preedit_buf: [512]u8 = undefined,
     ime_preedit_len: usize = 0,
 
+    // Manual drag/resize state (Linux fallback for unreliable SDL hit-testing)
+    drag_state: enum { idle, dragging, resizing } = .idle,
+    drag_hit: window_drag_region.DragHit = .normal,
+    drag_start_x: i32 = 0,
+    drag_start_y: i32 = 0,
+    drag_window_x: i32 = 0,
+    drag_window_y: i32 = 0,
+    drag_window_w: i32 = 0,
+    drag_window_h: i32 = 0,
+
     // Input event queues (mutex-guarded; C3 will push into them)
     key_events: EventQueue(platform_input.KeyEvent) = .{},
     char_events: EventQueue(platform_input.CharEvent) = .{},
@@ -609,6 +619,66 @@ fn processEvent(event: c.SDL_Event) void {
                     }
                     return;
                 }
+
+                // Manual drag/resize for Linux (SDL hit-testing doesn't reliably
+                // trigger WM actions on all Linux DEs, particularly XFCE).
+                if (btn == .left and event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                    // Query logical window size for hit classification
+                    var logical_w: c_int = 0;
+                    var logical_h: c_int = 0;
+                    _ = c.SDL_GetWindowSize(w.sdl_window, &logical_w, &logical_h);
+                    const lw: i32 = @intCast(logical_w);
+                    const lh: i32 = @intCast(logical_h);
+
+                    const cap_w: i32 = @intFromFloat(platform_window.caption_button_width);
+                    const toggle_w: i32 = 46;
+                    const config_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+                    const help_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+                    const copilot_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+                    const caption_start = lw - cap_w * 3;
+                    const config_x = caption_start - config_w;
+                    const help_x = config_x - help_w;
+                    const copilot_x = help_x - copilot_w;
+
+                    const exclusions = [_]window_drag_region.Rect{
+                        .{ .x = 0, .y = 0, .w = toggle_w, .h = w.titlebar_height },
+                        .{ .x = copilot_x, .y = 0, .w = copilot_w, .h = w.titlebar_height },
+                        .{ .x = help_x, .y = 0, .w = help_w, .h = w.titlebar_height },
+                        .{ .x = config_x, .y = 0, .w = config_w, .h = w.titlebar_height },
+                        .{ .x = caption_start, .y = 0, .w = cap_w * 3, .h = w.titlebar_height },
+                    };
+                    const hit = window_drag_region.classify(
+                        lw,
+                        lh,
+                        mx,
+                        my,
+                        .{ .titlebar_height = w.titlebar_height, .border = 4, .exclusions = &exclusions },
+                    );
+
+                    if (hit == .draggable or hit != .normal) {
+                        w.drag_hit = hit;
+                        w.drag_state = if (hit == .draggable) .dragging else .resizing;
+                        w.drag_start_x = mx;
+                        w.drag_start_y = my;
+                        // Query current window position
+                        var wx: c_int = 0;
+                        var wy: c_int = 0;
+                        _ = c.SDL_GetWindowPosition(w.sdl_window, &wx, &wy);
+                        w.drag_window_x = @intCast(wx);
+                        w.drag_window_y = @intCast(wy);
+                        w.drag_window_w = lw;
+                        w.drag_window_h = lh;
+                        // Swallow the event — don't forward to application
+                        return;
+                    }
+                } else if (btn == .left and event.type == c.SDL_EVENT_MOUSE_BUTTON_UP) {
+                    if (w.drag_state != .idle) {
+                        w.drag_state = .idle;
+                        // Swallow the event
+                        return;
+                    }
+                }
+
                 w.mouse_button_events.push(.{
                     .button = btn,
                     .action = action,
@@ -634,6 +704,76 @@ fn processEvent(event: c.SDL_Event) void {
                 const m = keymap.modifiers(@intCast(c.SDL_GetModState()));
                 w.mouse_x = mx;
                 w.mouse_y = my;
+
+                // Handle active drag or resize
+                if (w.drag_state == .dragging) {
+                    const dx = mx - w.drag_start_x;
+                    const dy = my - w.drag_start_y;
+                    const new_x = w.drag_window_x + dx;
+                    const new_y = w.drag_window_y + dy;
+                    _ = c.SDL_SetWindowPosition(w.sdl_window, @intCast(new_x), @intCast(new_y));
+                    // Continue hover detection but don't push a mouse event during drag
+                    w.hovered_button = captionButtonAt(w, mx, my);
+                    return;
+                } else if (w.drag_state == .resizing) {
+                    const dx = mx - w.drag_start_x;
+                    const dy = my - w.drag_start_y;
+                    var new_x = w.drag_window_x;
+                    var new_y = w.drag_window_y;
+                    var new_w = w.drag_window_w;
+                    var new_h = w.drag_window_h;
+
+                    switch (w.drag_hit) {
+                        .resize_left => {
+                            new_x = w.drag_window_x + dx;
+                            new_w = @max(200, w.drag_window_w - dx);
+                        },
+                        .resize_right => {
+                            new_w = @max(200, w.drag_window_w + dx);
+                        },
+                        .resize_top => {
+                            new_y = w.drag_window_y + dy;
+                            new_h = @max(100, w.drag_window_h - dy);
+                        },
+                        .resize_bottom => {
+                            new_h = @max(100, w.drag_window_h + dy);
+                        },
+                        .resize_top_left => {
+                            new_x = w.drag_window_x + dx;
+                            new_y = w.drag_window_y + dy;
+                            new_w = @max(200, w.drag_window_w - dx);
+                            new_h = @max(100, w.drag_window_h - dy);
+                        },
+                        .resize_top_right => {
+                            new_y = w.drag_window_y + dy;
+                            new_w = @max(200, w.drag_window_w + dx);
+                            new_h = @max(100, w.drag_window_h - dy);
+                        },
+                        .resize_bottom_left => {
+                            new_x = w.drag_window_x + dx;
+                            new_w = @max(200, w.drag_window_w - dx);
+                            new_h = @max(100, w.drag_window_h + dy);
+                        },
+                        .resize_bottom_right => {
+                            new_w = @max(200, w.drag_window_w + dx);
+                            new_h = @max(100, w.drag_window_h + dy);
+                        },
+                        else => {},
+                    }
+
+                    // Recompute position adjustment when resizing from left or top
+                    if (w.drag_hit == .resize_left or w.drag_hit == .resize_top_left or w.drag_hit == .resize_bottom_left) {
+                        new_x = w.drag_window_x + (w.drag_window_w - new_w);
+                    }
+                    if (w.drag_hit == .resize_top or w.drag_hit == .resize_top_left or w.drag_hit == .resize_top_right) {
+                        new_y = w.drag_window_y + (w.drag_window_h - new_h);
+                    }
+
+                    _ = c.SDL_SetWindowPosition(w.sdl_window, @intCast(new_x), @intCast(new_y));
+                    _ = c.SDL_SetWindowSize(w.sdl_window, @intCast(new_w), @intCast(new_h));
+                    return;
+                }
+
                 // Hover state for the caption-button highlight (the renderer
                 // reads window_backend.hoveredCaptionButton).
                 w.hovered_button = captionButtonAt(w, mx, my);
