@@ -393,6 +393,7 @@ test {
     _ = @import("render_diagnostics.zig");
     _ = @import("diag_log.zig");
     _ = @import("notification.zig");
+    _ = @import("platform/notify_tray_callback.zig");
     _ = @import("clipboard_osc52.zig");
     _ = @import("renderer/gpu/backend.zig");
     // Performance benchmark core (pure modules). cli.zig is excluded here
