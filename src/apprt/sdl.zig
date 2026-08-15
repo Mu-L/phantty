@@ -345,22 +345,39 @@ fn hitTest(
 ) callconv(.c) c.SDL_HitTestResult {
     _ = win;
     const self: *Window = @ptrCast(@alignCast(data orelse return c.SDL_HITTEST_NORMAL));
-    // Exclude the caption-button cluster from the draggable titlebar so clicks
-    // reach the host (which performs minimize/maximize/close) instead of being
-    // swallowed as a window-move.
+    // Exclude all interactive titlebar buttons from the draggable titlebar so clicks
+    // reach the host instead of being swallowed as a window-move. This includes the
+    // toggle/hamburger button at the left, the config/help/copilot buttons before the
+    // caption buttons, and the caption-button cluster (min/max/close) at the right.
     const cap_w: i32 = @intFromFloat(platform_window.caption_button_width);
-    const caption_excl = [_]window_drag_region.Rect{.{
-        .x = self.width - cap_w * 3,
-        .y = 0,
-        .w = cap_w * 3,
-        .h = self.titlebar_height,
-    }};
+    const toggle_w: i32 = 46;
+    const config_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+    const help_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+    const copilot_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
+    
+    const caption_start = self.width - cap_w * 3;
+    const config_x = caption_start - config_w;
+    const help_x = config_x - help_w;
+    const copilot_x = help_x - copilot_w;
+    
+    const exclusions = [_]window_drag_region.Rect{
+        // Toggle/hamburger button at left
+        .{ .x = 0, .y = 0, .w = toggle_w, .h = self.titlebar_height },
+        // Copilot button (before help)
+        .{ .x = copilot_x, .y = 0, .w = copilot_w, .h = self.titlebar_height },
+        // Help button (before config)
+        .{ .x = help_x, .y = 0, .w = help_w, .h = self.titlebar_height },
+        // Config/gear button (before caption buttons)
+        .{ .x = config_x, .y = 0, .w = config_w, .h = self.titlebar_height },
+        // Caption buttons (min/max/close)
+        .{ .x = caption_start, .y = 0, .w = cap_w * 3, .h = self.titlebar_height },
+    };
     const hit = window_drag_region.classify(
         self.width,
         self.height,
         area.*.x,
         area.*.y,
-        .{ .titlebar_height = self.titlebar_height, .border = 4, .exclusions = &caption_excl },
+        .{ .titlebar_height = self.titlebar_height, .border = 4, .exclusions = &exclusions },
     );
     return switch (hit) {
         .normal => c.SDL_HITTEST_NORMAL,
