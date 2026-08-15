@@ -513,16 +513,28 @@ fn processEvent(event: c.SDL_Event) void {
         // ---------------------------------------------------------------
         // Keyboard: key-down → KeyEvent (key-up discarded; no press/release
         //           in neutral layer), text-input → CharEvent.
+        //
+        // SDL3 provides both scancode (hardware position) and keycode (logical
+        // key). Special keys (arrows, F-keys, etc.) use scancode; alphanumeric
+        // keys with modifiers (Ctrl+V, Ctrl+Shift+P, etc.) use keycode so the
+        // keybind system can match them regardless of keyboard layout.
         // ---------------------------------------------------------------
         c.SDL_EVENT_KEY_DOWN => {
             const win_id = event.key.windowID;
             if (g_registry.find(win_id)) |ptr| {
                 const w: *Window = @ptrCast(@alignCast(ptr));
+                const m = keymap.modifiers(@intCast(event.key.mod));
                 const sc: u32 = @intCast(event.key.scancode);
-                if (keymap.keyCodeFromScancode(sc)) |code| {
-                    const m = keymap.modifiers(@intCast(event.key.mod));
+                const code = keymap.keyCodeFromScancode(sc) orelse blk: {
+                    // Printable keys normally arrive via TEXT_INPUT. With a
+                    // shortcut modifier, map the logical keycode (then scancode)
+                    // so Ctrl+V / Ctrl+Shift+P / Ctrl+Shift+= reach keybinds.
+                    if (!(m.ctrl or m.alt or m.super)) break :blk null;
+                    break :blk keymap.shortcutKeyCode(sc, @intCast(event.key.key));
+                };
+                if (code) |key_code| {
                     w.key_events.push(.{
-                        .key_code = code,
+                        .key_code = key_code,
                         .ctrl = m.ctrl,
                         .shift = m.shift,
                         .alt = m.alt,
