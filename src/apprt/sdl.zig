@@ -724,6 +724,11 @@ fn processEvent(event: c.SDL_Event) void {
                     const new_x = w.drag_window_x + dx;
                     const new_y = w.drag_window_y + dy;
                     _ = c.SDL_SetWindowPosition(w.sdl_window, @intCast(new_x), @intCast(new_y));
+                    // Update tracked window position so deltas accumulate correctly.
+                    // Mouse coordinates are window-relative; after moving the window,
+                    // the next motion event's (mx,my) reflects the new window origin.
+                    w.drag_window_x = new_x;
+                    w.drag_window_y = new_y;
                     // Continue hover detection but don't push a mouse event during drag
                     w.hovered_button = captionButtonAt(w, mx, my);
                     return;
@@ -783,6 +788,13 @@ fn processEvent(event: c.SDL_Event) void {
 
                     _ = c.SDL_SetWindowPosition(w.sdl_window, @intCast(new_x), @intCast(new_y));
                     _ = c.SDL_SetWindowSize(w.sdl_window, @intCast(new_w), @intCast(new_h));
+                    // Update tracked window geometry so deltas accumulate correctly.
+                    // Mouse coordinates are window-relative; after resizing/repositioning,
+                    // the next motion event reflects the new window frame.
+                    w.drag_window_x = new_x;
+                    w.drag_window_y = new_y;
+                    w.drag_window_w = new_w;
+                    w.drag_window_h = new_h;
                     return;
                 }
 
