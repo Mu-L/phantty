@@ -343,8 +343,16 @@ fn hitTest(
     area: [*c]const c.SDL_Point,
     data: ?*anyopaque,
 ) callconv(.c) c.SDL_HitTestResult {
-    _ = win;
     const self: *Window = @ptrCast(@alignCast(data orelse return c.SDL_HITTEST_NORMAL));
+    // SDL hit-test coordinates are in logical pixels, but self.width/height are
+    // physical pixels from SDL_GetWindowSizeInPixels. Query logical size for
+    // correct hit-test exclusion calculations.
+    var logical_w: c_int = 0;
+    var logical_h: c_int = 0;
+    _ = c.SDL_GetWindowSize(win orelse return c.SDL_HITTEST_NORMAL, &logical_w, &logical_h);
+    const w: i32 = @intCast(logical_w);
+    const h: i32 = @intCast(logical_h);
+
     // Exclude all interactive titlebar buttons from the draggable titlebar so clicks
     // reach the host instead of being swallowed as a window-move. This includes the
     // toggle/hamburger button at the left, the config/help/copilot buttons before the
@@ -355,7 +363,7 @@ fn hitTest(
     const help_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
     const copilot_w: i32 = if (builtin.os.tag == .macos) 0 else 46;
 
-    const caption_start = self.width - cap_w * 3;
+    const caption_start = w - cap_w * 3;
     const config_x = caption_start - config_w;
     const help_x = config_x - help_w;
     const copilot_x = help_x - copilot_w;
@@ -373,8 +381,8 @@ fn hitTest(
         .{ .x = caption_start, .y = 0, .w = cap_w * 3, .h = self.titlebar_height },
     };
     const hit = window_drag_region.classify(
-        self.width,
-        self.height,
+        w,
+        h,
         area.*.x,
         area.*.y,
         .{ .titlebar_height = self.titlebar_height, .border = 4, .exclusions = &exclusions },
