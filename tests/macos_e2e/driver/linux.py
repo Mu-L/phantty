@@ -4,7 +4,6 @@ control-channel-only mode when xdotool is missing (same pattern as macOS #279).
 """
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -25,6 +24,27 @@ _CONFIG = (
 )
 
 
+def config_dir_for_home(home: str) -> str:
+    """Config dir the Linux app actually reads: ~/.config/wispterm.
+
+    Must match ``src/platform/dirs.zig`` ``configDirFromXdgOrHome`` (not
+    XDG_DATA_HOME / ~/.local/share). The isolated launch sets XDG_CONFIG_HOME
+    to ``{home}/.config`` so a host XDG_CONFIG_HOME cannot leak in.
+    """
+    return os.path.join(home, ".config", "wispterm")
+
+
+def map_linux_mods(mods):
+    """Map harness modifier names to xdotool keysyms.
+
+    Shared tests pass ``cmd`` for the primary chord (Cmd+Shift+P on macOS).
+    Linux defaults keep Ctrl (``src/keybind.zig``), so ``cmd`` → ``ctrl`` here
+    only. Pass ``super`` when Super is actually required.
+    """
+    mod_map = {"cmd": "ctrl", "ctrl": "ctrl", "shift": "shift", "alt": "alt", "super": "super"}
+    return [mod_map.get(m.lower(), m) for m in mods]
+
+
 class LinuxDriver:
     def __init__(self, binary: str, ctl_binary: str):
         # binary: .../zig-out/bin/wispterm ; ctl_binary: .../zig-out/bin/wisptermctl
@@ -38,7 +58,18 @@ class LinuxDriver:
 
     # ---- lifecycle ----
     def _config_dir(self) -> str:
-        return os.path.join(self.home, ".local", "share", "wispterm")
+        return config_dir_for_home(self.home)
+
+    def _isolated_env(self) -> dict:
+        env = dict(os.environ)
+        env["HOME"] = self.home
+        # Pin XDG so the app and wisptermctl agree with _config_dir(), even when
+        # the host session exports XDG_CONFIG_HOME / XDG_DATA_HOME.
+        env["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
+        env["XDG_DATA_HOME"] = os.path.join(self.home, ".local", "share")
+        env["XDG_STATE_HOME"] = os.path.join(self.home, ".local", "state")
+        env["XDG_CACHE_HOME"] = os.path.join(self.home, ".cache")
+        return env
 
     def launch(self, *, cols: int = 80, rows: int = 24) -> None:
         cfg_dir = self._config_dir()
@@ -54,12 +85,12 @@ class LinuxDriver:
         with open(os.path.join(cfg_dir, "state"), "w") as f:
             f.write("ai-setup-prompted = 1\n")
 
-        env = dict(os.environ)
-        env["HOME"] = self.home
         # DISPLAY is inherited from the test process; if unset, the skip
         # machinery in conftest has already excluded this run.
-
-        self.proc = subprocess.Popen([self.binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.proc = subprocess.Popen(
+            [self.binary], env=self._isolated_env(),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
 
         # control server publishes its discovery file inside our isolated HOME
         disc = os.path.join(cfg_dir, "agent-control.json")
@@ -130,12 +161,15 @@ class LinuxDriver:
             "down": "Down",
             "left": "Left",
             "right": "Right",
+            "equal": "equal",
+            "plus": "plus",
+            "minus": "minus",
         }
         keysym = keysym_map.get(key_name.lower(), key_name)
         # xdotool modifier syntax: key --clearmodifiers ctrl+shift+p
+        # Harness "cmd" maps to Ctrl on Linux (see map_linux_mods).
         if mods:
-            mod_map = {"cmd": "super", "ctrl": "ctrl", "shift": "shift", "alt": "alt"}
-            mods_str = "+".join(mod_map.get(m.lower(), m) for m in mods)
+            mods_str = "+".join(map_linux_mods(mods))
             keysym = f"{mods_str}+{keysym}"
         subprocess.run([self._xdotool, "key", "--clearmodifiers", keysym], check=False)
         time.sleep(self._KEY_GAP)
@@ -180,9 +214,62 @@ class LinuxDriver:
         for _ in range(count):
             subprocess.run([self._xdotool, "click", "1"], check=False)
 
+    def _window_id(self) -> str:
+        """xdotool id of the test instance's WispTerm window."""
+        if not self._xdotool or not self.proc:
+            raise RuntimeError("xdotool unavailable; window geometry skipped in this run")
+        out = subprocess.run(
+            [self._xdotool, "search", "--onlyvisible", "--pid", str(self.proc.pid), "--name", "WispTerm"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        ids = out.stdout.split()
+        if not ids:
+            # --onlyvisible can miss a just-mapped window; retry without it.
+            out = subprocess.run(
+                [self._xdotool, "search", "--pid", str(self.proc.pid), "--name", "WispTerm"],
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+            ids = out.stdout.split()
+        if not ids:
+            raise RuntimeError("WispTerm window id not found")
+        return ids[-1]
+
+    def window_rect(self):
+        """(x, y, w, h) of the test window in screen pixels (xdotool space)."""
+        wid = self._window_id()
+        out = subprocess.run(
+            [self._xdotool, "getwindowgeometry", "--shell", wid],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        vals = {}
+        for line in out.stdout.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                try:
+                    vals[k] = int(v)
+                except ValueError:
+                    continue
+        try:
+            return vals["X"], vals["Y"], vals["WIDTH"], vals["HEIGHT"]
+        except KeyError:
+            raise RuntimeError(f"xdotool getwindowgeometry failed: {out.stdout!r} {out.stderr!r}")
+
+    def window_size(self):
+        """Current (w, h) in screen pixels."""
+        _, _, w, h = self.window_rect()
+        return w, h
+
+    def set_window_size(self, w: int, h: int) -> None:
+        """Resize via xdotool (non-AX). Used to drive PTY stty-size changes."""
+        wid = self._window_id()
+        subprocess.run(
+            [self._xdotool, "windowsize", wid, str(w), str(h)],
+            capture_output=True, timeout=3, check=False,
+        )
+
     # ---- menu / window ----
-    # Linux does not expose a stable menu/window API analogous to macOS AX, so
-    # these are stubs. Tests that rely on them should be marked @macos_only.
+    # Linux has no AX menu API. menu_* stay NotImplemented; window geometry is
+    # driveable via xdotool (window_rect / set_window_size).
     def menu_click(self, *path: str) -> None:
         raise NotImplementedError("menu automation not implemented on Linux")
 

@@ -1,3 +1,7 @@
+import os
+import shutil
+import sys
+
 import pytest
 
 
@@ -7,19 +11,21 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "linux_only: test that only applies to the Linux backend")
 
 
-# Platform markers for test filtering
-import sys
-
 macos_only = pytest.mark.skipif(sys.platform != "darwin", reason="macOS-only behavior")
 linux_only = pytest.mark.skipif(sys.platform != "linux", reason="Linux-only behavior")
 
-import os
+# These modules import MacDriver → Quartz at collection time. Skip the files on
+# non-macOS rather than erroring out of the Linux run.
+collect_ignore = []
+if sys.platform != "darwin":
+    collect_ignore.extend(["test_copilot_history.py", "test_mcp_panel.py"])
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-# macOS uses .app bundle; Linux uses plain binary
+# macOS uses .app bundle; Linux uses plain binary. Env overrides let CI/dev
+# point at a prebuilt pair without rebuilding via `make test-linux-e2e`.
 APP_BUNDLE = os.path.join(REPO_ROOT, "zig-out", "bin", "WispTerm.app")
-LINUX_BINARY = os.path.join(REPO_ROOT, "zig-out", "bin", "wispterm")
-CTL_BINARY = os.path.join(REPO_ROOT, "zig-out", "bin", "wisptermctl")
+LINUX_BINARY = os.environ.get("WISPTERM_E2E_BINARY") or os.path.join(REPO_ROOT, "zig-out", "bin", "wispterm")
+CTL_BINARY = os.environ.get("WISPTERM_E2E_CTL") or os.path.join(REPO_ROOT, "zig-out", "bin", "wisptermctl")
 
 
 def _pyobjc_available() -> bool:
@@ -98,6 +104,18 @@ def require_linux_gui():
         pytest.skip(f"missing {LINUX_BINARY}; run `make test-linux-e2e` (builds it first)")
     if not os.path.exists(CTL_BINARY):
         pytest.skip(f"missing {CTL_BINARY}; run `make test-linux-e2e` (builds it first)")
+
+
+def require_xdotool():
+    """Skip unless xdotool can inject real key/mouse events."""
+    if not shutil.which("xdotool"):
+        pytest.skip("xdotool not installed; real-input Linux E2E skipped")
+
+
+def require_xclip():
+    """Skip unless xclip can read/write the clipboard."""
+    if not shutil.which("xclip"):
+        pytest.skip("xclip not installed; clipboard Linux E2E skipped")
 
 
 @pytest.fixture(scope="session")

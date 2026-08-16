@@ -2,7 +2,20 @@
 test_ctl.py, test_panes.py, etc. These tests are Linux-only assertions.
 """
 import pytest
+
 from tests.macos_e2e.conftest import linux_only
+from tests.macos_e2e.driver.linux import config_dir_for_home, map_linux_mods
+
+
+def test_config_dir_is_xdg_config_not_data_home():
+    # src/platform/dirs.zig configDirFromXdgOrHome → ~/.config/wispterm
+    assert config_dir_for_home("/tmp/iso") == "/tmp/iso/.config/wispterm"
+
+
+def test_harness_cmd_maps_to_ctrl():
+    assert map_linux_mods(("cmd", "shift")) == ["ctrl", "shift"]
+    assert map_linux_mods(("ctrl",)) == ["ctrl"]
+    assert map_linux_mods(("super",)) == ["super"]
 
 
 @pytest.mark.e2e
