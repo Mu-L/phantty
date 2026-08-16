@@ -1,8 +1,14 @@
-"""Linux companion of test_mcp_discovery: startup MCP handshake against ~/.config/wispterm.
+"""Linux companion of test_mcp_discovery: mcp.json must not spawn a server at launch.
 
-The macOS original hardcodes APP_BUNDLE + ~/Library/Application Support/wispterm.
-This launches the Linux binary with the same isolated-HOME / XDG config the
-driver uses, and asserts initialize + tools/list reached a fake stdio server.
+Current main (see src/main.zig) builds the MCP catalog from mcp.json + the disk
+cache but does **not** spawn servers at startup — discovery is deferred to the
+panel Test probe / first mcp_activate. The macOS original still asserts
+initialize + tools/list at launch; that is stale. This companion keeps the
+macOS file intact and asserts the Linux behavior that matches the app today:
+
+- isolated launch with ~/.config/wispterm/mcp.json still starts (agent-control
+  published, panes visible)
+- the configured stdio server process is never spawned
 """
 import json
 import os
@@ -14,9 +20,13 @@ import pytest
 from tests.macos_e2e.conftest import CTL_BINARY, LINUX_BINARY, linux_only, require_linux_gui
 from tests.macos_e2e.driver.linux import LinuxDriver
 
+# Writes "spawned" the instant the process starts, before any JSON-RPC. That
+# distinguishes "server never launched" from "launched but handshake incomplete".
 _FAKE_MCP_SERVER = '''
 import sys, json
 record_path = sys.argv[1]
+with open(record_path, "a") as f:
+    f.write("spawned\\n")
 
 def rec(method):
     with open(record_path, "a") as f:
@@ -48,9 +58,15 @@ for line in sys.stdin:
 '''
 
 
+def _recorded(path: str) -> list:
+    if not os.path.exists(path):
+        return []
+    return open(path).read().split()
+
+
 @pytest.mark.e2e
 @linux_only
-def test_mcp_servers_discovered_at_startup():
+def test_mcp_json_does_not_spawn_server_at_startup():
     require_linux_gui()
     driver = LinuxDriver(binary=LINUX_BINARY, ctl_binary=CTL_BINARY)
     try:
@@ -69,16 +85,21 @@ def test_mcp_servers_discovered_at_startup():
 
         driver.launch()
 
-        methods = []
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            if os.path.exists(record_path):
-                methods = open(record_path).read().split()
-                if "initialize" in methods and "tools/list" in methods:
-                    break
-            time.sleep(0.3)
+        # launch() already blocked on agent-control.json + a live pane.
+        disc = os.path.join(cfg_dir, "agent-control.json")
+        assert os.path.exists(disc), "agent-control discovery file missing after launch with mcp.json"
+        panes = driver.ctl.panes()
+        assert panes.get("tabs"), "isolated launch with mcp.json published no tabs"
 
-        assert "initialize" in methods, f"app never sent initialize to the MCP server; recorded {methods}"
-        assert "tools/list" in methods, f"app never sent tools/list to the MCP server; recorded {methods}"
+        # Give a slow async spawn a moment; startup discovery used to be
+        # synchronous and would have written "spawned" before launch() returned.
+        time.sleep(2.0)
+        methods = _recorded(record_path)
+        assert "spawned" not in methods, (
+            "MCP server was spawned at startup; main.zig defers discovery to "
+            f"the panel Test probe / mcp_activate. recorded {methods}"
+        )
+        assert "initialize" not in methods
+        assert "tools/list" not in methods
     finally:
         driver.quit()

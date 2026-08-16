@@ -80,7 +80,7 @@ python3 -m pytest tests/macos_e2e -m "not e2e"
 - `test_smoke.py` — 控制通道 echo 往返(启动 + 配置 + 控制服务 + shell + get-text),跨平台
 - `test_linux.py` — Linux-only:首启无冻结(#599 回归),隔离 HOME;另有 config-dir / cmd→ctrl 单测
 - `test_linux_companion.py` — Linux 伴侣用例:click-to-PTY、legacy 键编码、Ctrl+V 粘贴、窗口缩放→`stty size`、Shift+Enter CSI-u、键盘分屏/新标签、`wisptermctl spawn`、OSC 标题。不依赖 Quartz/AX/osascript
-- `test_linux_mcp_discovery.py` — Linux 伴侣:启动时读 `~/.config/wispterm/mcp.json` 并完成 MCP discovery
+- `test_linux_mcp_discovery.py` — Linux 伴侣:带 `~/.config/wispterm/mcp.json` 仍能启动,且**不会**在启动时 spawn MCP server(discovery 推迟到 panel Test / `mcp_activate`;macOS 原用例的 launch handshake 断言已过时,保持不动)
 - `test_menu.py` — Edit > Copy 菜单状态读取(osascript→AX,真实),macOS-only(Linux 无 AX,不移植)
 - `test_quartz_input.py` — Quartz modifier flags 单测,macOS-only
 - `test_keybinds.py` — 真实键盘入 PTY(跨平台);`test_cmd_c_copies_selection` 仍 xfail(无 select-all)
