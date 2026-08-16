@@ -409,7 +409,9 @@ test "unsupported backend uses UTF-8 native command and cwd storage" {
 test "Command.wait reaps an exited child so it does not stay defunct" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
-    var child = std.process.Child.init(&.{"/bin/true"}, std.testing.allocator);
+    // `/bin/sh -c` matches the other POSIX spawn tests in this file. A bare
+    // `/bin/true` exited 1 on macOS ARM CI, which is not the reap invariant.
+    var child = std.process.Child.init(&.{ "/bin/sh", "-c", "exit 42" }, std.testing.allocator);
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
@@ -418,7 +420,7 @@ test "Command.wait reaps an exited child so it does not stay defunct" {
     var cmd = Command{ .pid = child.id };
     defer cmd.deinit();
     const exit = cmd.waitUntilReaped(500) orelse return error.NotReaped;
-    try std.testing.expectEqual(Command.Exit{ .exited = 0 }, exit);
+    try std.testing.expectEqual(Command.Exit{ .exited = 42 }, exit);
     try std.testing.expectEqual(@as(std.c.pid_t, -1), cmd.pid);
     try std.testing.expectEqual(process_shared.WaitResult.no_child, process_shared.reapChild(child.id, 0));
 }
