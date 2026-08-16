@@ -460,6 +460,8 @@ test {
     _ = @import("html/server_model.zig");
     // Platform-aware agent prompt: pure string constants, no heavy deps.
     _ = @import("platform/agent_prompt.zig");
+    // OSC 0/1/2/7 title scanner: must ignore OSC 10/11 color payloads.
+    _ = @import("osc_title.zig");
     // Pure login-shell argv logic (macOS bash/.bashrc fix). OS-agnostic, so it
     // runs here on the native host rather than in the POSIX-only exec path.
     _ = @import("platform/login_shell.zig");

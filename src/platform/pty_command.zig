@@ -505,8 +505,12 @@ test "platform pty command exposes command lifecycle API" {
 
     const wait_info = @typeInfo(@TypeOf(CommandType.wait)).@"fn";
     try std.testing.expectEqual(@as(usize, 2), wait_info.params.len);
-    try std.testing.expect(wait_info.params[0].type.? == *const CommandType);
+    try std.testing.expect(wait_info.params[0].type.? == *CommandType);
     try std.testing.expect(wait_info.params[1].type.? == bool);
+
+    const reap_info = @typeInfo(@TypeOf(CommandType.waitUntilReaped)).@"fn";
+    try std.testing.expectEqual(@as(usize, 2), reap_info.params.len);
+    try std.testing.expect(reap_info.params[0].type.? == *CommandType);
 
     const deinit_info = @typeInfo(@TypeOf(CommandType.deinit)).@"fn";
     try std.testing.expectEqual(@as(usize, 1), deinit_info.params.len);
