@@ -958,9 +958,13 @@ fn unixSessionExecTool(ctx: *ToolContext, kind: UnixSessionKind, surface_id: []c
 }
 
 fn allocUnixSessionCommand(allocator: std.mem.Allocator, nonce: i64, command: []const u8) ![]u8 {
+    // Keep `{` on the same incomplete first line so hist_ignore_space covers
+    // the whole compound command. Put the body between newlines so a heredoc
+    // terminator (`EOF`) stays alone on its line — gluing `; }` onto it leaves
+    // the remote interactive shell waiting at PS2.
     return std.fmt.allocPrint(
         allocator,
-        " setopt hist_ignore_space 2>/dev/null; HISTCONTROL=ignorespace; printf '\\n__WISPTERM_AGENT_START_{d}__\\n'; {{ {s}; }} 2>&1; __wispterm_agent_status=$?; printf '\\n__WISPTERM_AGENT_END_{d}__:%s\\n' \"$__wispterm_agent_status\"\r",
+        " setopt hist_ignore_space 2>/dev/null; HISTCONTROL=ignorespace; printf '\\n__WISPTERM_AGENT_START_{d}__\\n'; {{\n{s}\n}} 2>&1; __wispterm_agent_status=$?; printf '\\n__WISPTERM_AGENT_END_{d}__:%s\\n' \"$__wispterm_agent_status\"\r",
         .{ nonce, std.mem.trimRight(u8, command, "\r\n"), nonce },
     );
 }
@@ -1250,17 +1254,61 @@ test "shell exec refuses bare REPL launchers but allows run-and-exit invocations
     }
 }
 
-test "shell exec trims trailing newlines before wrapping multiline commands" {
+test "shell exec wraps the command on its own lines so a heredoc terminator stays intact" {
     const allocator = std.testing.allocator;
+
     const wrapped = try allocUnixSessionCommand(allocator, 123, "python3 -c \"\nprint(1)\n\"\n");
     defer allocator.free(wrapped);
+    try std.testing.expect(wrapped[0] == ' ');
+    try std.testing.expect(std.mem.endsWith(u8, wrapped, "\r"));
+    try std.testing.expect(std.mem.indexOf(u8, wrapped, "; {\npython3 -c \"\nprint(1)\n\"\n} 2>&1;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wrapped, "python3 -c \"\nprint(1)\n\"; }") == null);
 
-    try std.testing.expect(std.mem.indexOf(u8, wrapped, "python3 -c \"\nprint(1)\n\"; }") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wrapped, "\n; }") == null);
+    const simple = try allocUnixSessionCommand(allocator, 1, "ls -la");
+    defer allocator.free(simple);
+    try std.testing.expect(std.mem.indexOf(u8, simple, "; {\nls -la\n} 2>&1;") != null);
 
     const escaped_space = try allocUnixSessionCommand(allocator, 123, "printf foo\\ \n");
     defer allocator.free(escaped_space);
-    try std.testing.expect(std.mem.indexOf(u8, escaped_space, "printf foo\\ ; }") != null);
+    try std.testing.expect(std.mem.indexOf(u8, escaped_space, "; {\nprintf foo\\ \n} 2>&1;") != null);
+
+    const heredoc = try allocUnixSessionCommand(
+        allocator,
+        456,
+        "cd /root && python3 - <<'EOF'\nprint(1)\nEOF\n",
+    );
+    defer allocator.free(heredoc);
+    try std.testing.expect(std.mem.indexOf(u8, heredoc, "\nEOF\n} 2>&1;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, heredoc, "EOF;") == null);
+    try std.testing.expect(std.mem.indexOf(u8, heredoc, "__WISPTERM_AGENT_START_456__") != null);
+    try std.testing.expect(std.mem.indexOf(u8, heredoc, "__WISPTERM_AGENT_END_456__") != null);
+}
+
+test "agent exec sentinel extracts output after a multiline heredoc wrapper echo" {
+    const allocator = std.testing.allocator;
+    const snapshot =
+        "(base) u@h:~$  setopt hist_ignore_space 2>/dev/null; HISTCONTROL=ignorespace; " ++
+        "printf '\\n__WISPTERM_AGENT_START_789__\\n'; {\n" ++
+        "python3 - <<'EOF'\n" ++
+        "print(1)\n" ++
+        "EOF\n" ++
+        "} 2>&1; __wispterm_agent_status=$?; printf '\\n__WISPTERM_AGENT_END_789__:%s\\n' \"$__wispterm_agent_status\"\n" ++
+        "\n__WISPTERM_AGENT_START_789__\n" ++
+        "1\n" ++
+        "\n__WISPTERM_AGENT_END_789__:0\n" ++
+        "(base) u@h:~$ ";
+
+    const end = findCompletedEnd(snapshot, "__WISPTERM_AGENT_END_789__").?;
+    try std.testing.expect(std.mem.startsWith(u8, snapshot[end..], "__WISPTERM_AGENT_END_789__:0"));
+
+    const result = try extractUnixCommandResult(
+        allocator,
+        snapshot,
+        "__WISPTERM_AGENT_START_789__",
+        "__WISPTERM_AGENT_END_789__",
+    );
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("exit_status=0\n1", result);
 }
 
 test "extractPromptLine returns the trailing non-empty prompt line" {
