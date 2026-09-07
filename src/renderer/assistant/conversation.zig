@@ -71,6 +71,8 @@ const DETAIL_RULE_W: f32 = 3;
 const GROUP_HEADER_GAP: f32 = 6;
 const TABLE_CELL_PAD_X: f32 = 10;
 const TABLE_MIN_COL_W: f32 = 56;
+const TABLE_CELL_PAD_Y: f32 = 5;
+const TABLE_TOOLBAR_H: f32 = 32;
 const SUGGESTION_ROW_H: f32 = 28;
 const SUGGESTION_PAD_Y: f32 = 6;
 const SUGGESTION_GAP: f32 = 6;
@@ -1042,7 +1044,7 @@ fn markdownContentHeight(text: []const u8, max_w: f32) f32 {
     while (cursor < text.len) {
         if (!in_code and isMarkdownTableStart(text, cursor)) {
             const end = tableBlockEnd(text, cursor);
-            total += tableBlockHeight(text, cursor, end);
+            total += tableBlockHeight(text, cursor, end, max_w);
             cursor = end;
             continue;
         }
@@ -2026,7 +2028,7 @@ fn renderMarkdownContent(
         if (!in_code and isMarkdownTableStart(text, cursor)) {
             const table_start = cursor;
             const end = tableBlockEnd(text, cursor);
-            current_top += renderTableBlock(text, cursor, end, x, current_top, max_w, window_height, palette);
+            current_top += renderTableBlock(text, cursor, end, x, current_top, max_w, window_height, palette, display_cursor, selection_range);
             display_cursor += md.tableBlockDisplayLen(text, table_start, end);
             cursor = end;
             continue;
@@ -2119,11 +2121,9 @@ fn forEachCopyBlock(
         if (!in_code and isMarkdownTableStart(text, cursor)) {
             const start = cursor;
             const end = tableBlockEnd(text, cursor);
-            var widths: [TABLE_MAX_COLS]f32 = .{0} ** TABLE_MAX_COLS;
-            const col_count = measureTableColumns(text, start, end, max_w, &widths);
-            const table_w = if (col_count == 0) max_w else tableUsedWidth(widths[0..col_count]);
-            emit(ctx, CopyBlock{ .button = blockCopyButtonRect(x, current_top, table_w), .start = start, .end = end });
-            current_top += tableBlockHeight(text, start, end);
+            const table = TableLayout.init(text, start, end, max_w);
+            emit(ctx, CopyBlock{ .button = blockCopyButtonRect(x, current_top, table.width()), .start = start, .end = end });
+            current_top += tableBlockHeight(text, start, end, max_w);
             cursor = end;
             continue;
         }
@@ -2192,11 +2192,9 @@ fn byteOffsetForMarkdownPoint(
         if (!in_code and isMarkdownTableStart(text, cursor)) {
             const start = cursor;
             const end = tableBlockEnd(text, cursor);
-            const block_h = tableBlockHeight(text, cursor, end);
+            const block_h = tableBlockHeight(text, cursor, end, max_w);
             if (py < current_top + block_h) {
-                const row_h = tableRowHeight();
-                const row_index: usize = @intFromFloat(@max(0.0, @floor((py - current_top) / row_h)));
-                return display_cursor + md.tableRowDisplayOffsetWithin(text, start, end, row_index);
+                return display_cursor + tableByteOffsetForPoint(text, start, end, max_w, x, current_top, px, py);
             }
             current_top += block_h;
             display_cursor += md.tableBlockDisplayLen(text, start, end);
@@ -2307,17 +2305,143 @@ fn renderMarkdownFence(label: []const u8, x: f32, top_px: f32, max_w: f32, windo
     }
 }
 
-fn tableBlockHeight(text: []const u8, start: usize, end: usize) f32 {
-    var row_count: usize = 0;
+/// One geometry contract for height, painting, selection and block-copy buttons.
+const TableLayout = struct {
+    widths: [TABLE_MAX_COLS]f32 = .{0} ** TABLE_MAX_COLS,
+    alignments: [TABLE_MAX_COLS]md.TableAlignment = .{.left} ** TABLE_MAX_COLS,
+    count: usize = 0,
+    pad: f32 = TABLE_CELL_PAD_X,
+
+    fn init(text: []const u8, start: usize, end: usize, max_w: f32) TableLayout {
+        var self: TableLayout = .{};
+        var cells: [TABLE_MAX_COLS][]const u8 = undefined;
+        const header = nextSourceLine(text, start);
+        self.count = parseTableRowCells(header.line, &cells);
+        if (self.count == 0) return self;
+        const separator = nextSourceLine(text, header.next);
+        _ = parseTableRowCells(separator.line, &cells);
+        for (0..self.count) |col| self.alignments[col] = md.tableAlignment(cells[col]);
+        var cursor = start;
+        while (cursor < end) {
+            const info = nextSourceLine(text, cursor);
+            cursor = info.next;
+            if (isTableSeparatorLine(info.line)) continue;
+            const count = parseTableRowCells(info.line, &cells);
+            self.count = @max(self.count, count);
+            for (0..count) |col| {
+                var scratch: [256]u8 = undefined;
+                const cell = md.CellText.init(&scratch, cells[col]);
+                defer cell.deinit();
+                self.widths[col] = @max(self.widths[col], measureText(cell.text));
+            }
+        }
+        const n: f32 = @floatFromInt(self.count);
+        self.pad = @min(TABLE_CELL_PAD_X, @max(0, (max_w / n - 16) / 2));
+        const available = @max(n, max_w - n * (self.pad * 2 + 1) - 1);
+        md.fitTableWidths(self.widths[0..self.count], available, TABLE_MIN_COL_W);
+        return self;
+    }
+
+    fn width(self: TableLayout) f32 {
+        var total: f32 = 1;
+        for (self.widths[0..self.count]) |w| total += w + self.pad * 2 + 1;
+        return total;
+    }
+
+    fn rowHeight(self: TableLayout, line: []const u8) f32 {
+        var cells: [TABLE_MAX_COLS][]const u8 = undefined;
+        const count = parseTableRowCells(line, &cells);
+        var height = lineHeight();
+        for (0..@min(count, self.count)) |col| {
+            var scratch: [256]u8 = undefined;
+            const cell = md.CellText.init(&scratch, cells[col]);
+            defer cell.deinit();
+            height = @max(height, plainContentHeight(cell.text, self.widths[col], lineHeight()));
+        }
+        return height + TABLE_CELL_PAD_Y * 2;
+    }
+};
+
+/// UTF-8 wrap boundaries and alignment are shared by draw and hit-test.
+const TableCellLines = struct {
+    text: []const u8,
+    width: f32,
+    alignment: md.TableAlignment,
+    cursor: usize = 0,
+
+    const Line = struct { text: []const u8, offset: usize, inset: f32 };
+
+    fn next(self: *TableCellLines) ?Line {
+        if (self.cursor >= self.text.len) return null;
+        const start = self.cursor;
+        var width: f32 = 0;
+        while (self.cursor < self.text.len) {
+            const item = nextCodepoint(self.text, self.cursor);
+            if (self.cursor > start and width + item.advance > self.width) break;
+            width += item.advance;
+            self.cursor += item.len;
+        }
+        const free = @max(0, self.width - width);
+        return .{ .text = self.text[start..self.cursor], .offset = start, .inset = switch (self.alignment) {
+            .left => 0,
+            .center => free / 2,
+            .right => free,
+        } };
+    }
+};
+
+fn tableBlockHeight(text: []const u8, start: usize, end: usize, max_w: f32) f32 {
+    const table = TableLayout.init(text, start, end, max_w);
+    var total: f32 = TABLE_TOOLBAR_H + 1;
     var cursor = start;
     while (cursor < end) {
         const info = nextSourceLine(text, cursor);
         cursor = info.next;
-        if (isTableSeparatorLine(info.line)) continue;
-        row_count += 1;
+        if (!isTableSeparatorLine(info.line)) total += table.rowHeight(info.line);
     }
-    if (row_count == 0) return tableRowHeight();
-    return @as(f32, @floatFromInt(row_count)) * tableRowHeight() + 1;
+    return total;
+}
+
+fn tableByteOffsetForPoint(text: []const u8, start: usize, end: usize, max_w: f32, x: f32, top: f32, px: f32, py: f32) usize {
+    const table = TableLayout.init(text, start, end, max_w);
+    var cursor = start;
+    var row_top = top + TABLE_TOOLBAR_H;
+    var offset: usize = 0;
+    while (cursor < end) {
+        const info = nextSourceLine(text, cursor);
+        cursor = info.next;
+        if (isTableSeparatorLine(info.line)) continue;
+        const height = table.rowHeight(info.line);
+        var cells: [TABLE_MAX_COLS][]const u8 = undefined;
+        const count = parseTableRowCells(info.line, &cells);
+        var cell_x = x + 1;
+        for (0..count) |col| {
+            if (col > 0) offset += 3;
+            var scratch: [256]u8 = undefined;
+            const cell = md.CellText.init(&scratch, cells[col]);
+            defer cell.deinit();
+            if (col < table.count) {
+                const cell_w = table.widths[col] + table.pad * 2 + 1;
+                if (py < row_top + height and (px < cell_x + cell_w or col + 1 == table.count)) {
+                    var lines = TableCellLines{ .text = cell.text, .width = table.widths[col], .alignment = table.alignments[col] };
+                    var line_top = row_top + TABLE_CELL_PAD_Y;
+                    while (lines.next()) |line| {
+                        if (py < line_top + lineHeight()) return byteOffsetForLineX(line.text, offset + line.offset, cell_x + table.pad + line.inset, px);
+                        line_top += lineHeight();
+                    }
+                    return offset + cell.text.len;
+                }
+                cell_x += cell_w;
+            }
+            offset += cell.text.len;
+        }
+        // A GFM row may omit trailing cells. Clicking that empty area belongs
+        // to this row's end, not the following row's first character.
+        if (py < row_top + height) return offset;
+        offset += 1;
+        row_top += height;
+    }
+    return offset;
 }
 
 fn renderTableBlock(
@@ -2329,104 +2453,67 @@ fn renderTableBlock(
     max_w: f32,
     window_height: f32,
     palette: MarkdownPalette,
+    base_offset: usize,
+    selection_range: ?ai_chat.TextSelectionRange,
 ) f32 {
-    var widths: [TABLE_MAX_COLS]f32 = .{0} ** TABLE_MAX_COLS;
-    const col_count = measureTableColumns(text, start, end, max_w, &widths);
-    if (col_count == 0) return 0;
-
-    const table_w = tableUsedWidth(widths[0..col_count]);
-    const row_h = tableRowHeight();
-    const total_h = tableBlockHeight(text, start, end);
-    const table_y = window_height - top_px - total_h;
-
-    ui_pipeline.fillQuadAlpha(x, table_y, table_w, total_h, palette.table_bg, 0.94);
-    ui_pipeline.fillQuadAlpha(x, table_y, DETAIL_RULE_W, total_h, palette.table_border, 0.85);
-    ui_pipeline.fillQuadAlpha(x, table_y, table_w, 1, palette.table_border, 0.85);
-    ui_pipeline.fillQuadAlpha(x, table_y + total_h - 1, table_w, 1, palette.table_border, 0.85);
-    ui_pipeline.fillQuadAlpha(x + table_w - 1, table_y, 1, total_h, palette.table_border, 0.85);
-
+    const table = TableLayout.init(text, start, end, max_w);
+    if (table.count == 0) return 0;
+    const table_w = table.width();
+    // Give Copy its own band so it never covers the final header cell.
+    renderTopQuad(x, table_w, window_height, top_px, TABLE_TOOLBAR_H, palette.table_bg);
+    var row_top = top_px + TABLE_TOOLBAR_H;
     var cursor = start;
     var row_index: usize = 0;
+    var offset = base_offset;
     while (cursor < end) {
         const info = nextSourceLine(text, cursor);
         cursor = info.next;
         if (isTableSeparatorLine(info.line)) continue;
-
-        var cells: [TABLE_MAX_COLS][]const u8 = .{""} ** TABLE_MAX_COLS;
+        const row_h = table.rowHeight(info.line);
+        var cells: [TABLE_MAX_COLS][]const u8 = undefined;
         const cell_count = parseTableRowCells(info.line, &cells);
-        const row_top = top_px + @as(f32, @floatFromInt(row_index)) * row_h;
-        const row_y = window_height - row_top - row_h;
-        const row_bg = if (row_index == 0)
-            mixColor(palette.table_bg, AppWindow.g_theme.cursor_color, 0.10)
-        else if (row_index % 2 == 0)
-            palette.table_bg
-        else
-            palette.table_alt;
-        ui_pipeline.fillQuadAlpha(x, row_y, table_w, row_h, row_bg, if (row_index == 0) 0.98 else 0.92);
-        ui_pipeline.fillQuadAlpha(x, row_y, table_w, 1, palette.table_border, 0.85);
-
-        var cell_x = x + 1;
-        for (0..col_count) |col| {
-            if (col > 0) ui_pipeline.fillQuadAlpha(cell_x - 1, row_y, 1, row_h, palette.table_border, 0.85);
-            const text_w = widths[col];
-            const cell_w = text_w + TABLE_CELL_PAD_X * 2 + 1;
-            var clean_buf: [256]u8 = undefined;
-            const cell_text = if (col < cell_count) cleanInline(&clean_buf, cells[col]) else "";
-            _ = titlebar.renderTextLimited(
-                cell_text,
-                cell_x + TABLE_CELL_PAD_X,
-                row_y + @round((row_h - font.g_titlebar_cell_height) / 2),
-                if (row_index == 0) palette.strong else palette.normal,
-                text_w,
-            );
-            cell_x += cell_w;
+        const visible = row_top + row_h >= 0 and row_top < window_height;
+        if (visible) {
+            const bg = if (row_index == 0) mixColor(palette.table_bg, AppWindow.g_theme.cursor_color, 0.10) else if (row_index % 2 == 0) palette.table_bg else palette.table_alt;
+            renderTopQuad(x, table_w, window_height, row_top, row_h, bg);
+            renderTopQuad(x, table_w, window_height, row_top, 1, palette.table_border);
+            renderTopQuad(x, 1, window_height, row_top, row_h, palette.table_border);
         }
-
+        var cell_x = x + 1;
+        for (0..table.count) |col| {
+            if (col > 0 and col < cell_count) offset += 3;
+            var scratch: [256]u8 = undefined;
+            const cell = md.CellText.init(&scratch, if (col < cell_count) cells[col] else "");
+            defer cell.deinit();
+            if (visible) {
+                var lines = TableCellLines{ .text = cell.text, .width = table.widths[col], .alignment = table.alignments[col] };
+                var line_top = row_top + TABLE_CELL_PAD_Y;
+                while (lines.next()) |line| {
+                    const text_x = cell_x + table.pad + line.inset;
+                    if (selection_range) |range| renderTextLineSelection(line.text, offset + line.offset, text_x, line_top, lineHeight(), range, window_height, window_height);
+                    renderTextLine(line.text, text_x, line_top, table.widths[col] - line.inset, if (row_index == 0) palette.strong else palette.normal, window_height, window_height);
+                    line_top += lineHeight();
+                }
+            }
+            offset += cell.text.len;
+            cell_x += table.widths[col] + table.pad * 2 + 1;
+            if (visible) renderTopQuad(cell_x - 1, 1, window_height, row_top, row_h, palette.table_border);
+        }
+        // Preserve canonical offsets for malformed rows with extra cells.
+        if (cell_count > table.count) {
+            for (table.count..cell_count) |col| {
+                var scratch: [256]u8 = undefined;
+                const cell = md.CellText.init(&scratch, cells[col]);
+                defer cell.deinit();
+                offset += 3 + cell.text.len;
+            }
+        }
+        offset += 1;
+        row_top += row_h;
         row_index += 1;
     }
-
-    return total_h;
-}
-
-fn measureTableColumns(text: []const u8, start: usize, end: usize, max_w: f32, widths: *[TABLE_MAX_COLS]f32) usize {
-    @memset(widths, 0);
-    var col_count: usize = 0;
-    var cursor = start;
-    while (cursor < end) {
-        const info = nextSourceLine(text, cursor);
-        cursor = info.next;
-        if (isTableSeparatorLine(info.line)) continue;
-
-        var cells: [TABLE_MAX_COLS][]const u8 = .{""} ** TABLE_MAX_COLS;
-        const count = parseTableRowCells(info.line, &cells);
-        col_count = @max(col_count, count);
-        for (0..count) |i| {
-            var clean_buf: [256]u8 = undefined;
-            const cell_text = cleanInline(&clean_buf, cells[i]);
-            widths[i] = @max(widths[i], measureText(cell_text));
-        }
-    }
-    if (col_count == 0) return 0;
-
-    var natural_content_w: f32 = 0;
-    for (0..col_count) |i| {
-        widths[i] = @max(widths[i], TABLE_MIN_COL_W);
-        natural_content_w += widths[i];
-    }
-
-    const chrome = @as(f32, @floatFromInt(col_count)) * (TABLE_CELL_PAD_X * 2 + 1) + 1;
-    if (natural_content_w + chrome > max_w) {
-        const available = @max(24.0, (max_w - chrome) / @as(f32, @floatFromInt(col_count)));
-        for (0..col_count) |i| widths[i] = available;
-    }
-
-    return col_count;
-}
-
-fn tableUsedWidth(widths: []const f32) f32 {
-    var total: f32 = 1;
-    for (widths) |w| total += w + TABLE_CELL_PAD_X * 2 + 1;
-    return total;
+    renderTopQuad(x, table_w, window_height, row_top, 1, palette.table_border);
+    return row_top - top_px + 1;
 }
 
 fn renderWrappedSelection(
@@ -2683,10 +2770,6 @@ fn reasoningLineHeight() f32 {
     return @round(@max(21.0, font.g_titlebar_cell_height + 6.0));
 }
 
-fn tableRowHeight() f32 {
-    return @round(@max(28.0, font.g_titlebar_cell_height + 10.0));
-}
-
 fn blankLineHeight() f32 {
     return @round(@max(12.0, lineHeight() * 0.56));
 }
@@ -2706,4 +2789,51 @@ fn mixColor(a: [3]f32, b: [3]f32, t: f32) [3]f32 {
         a[1] + (b[1] - a[1]) * clamped,
         a[2] + (b[2] - a[2]) * clamped,
     };
+}
+
+test "markdown table wrapping height and selection share cell geometry" {
+    const text = "| Name | Path |\n| :--- | ---: |\n| 中文😀 | `C:/a/very/long/path/to/a/file.txt` |\n";
+    const narrow = TableLayout.init(text, 0, text.len, 220);
+    const wide = TableLayout.init(text, 0, text.len, 900);
+    try std.testing.expect(narrow.width() <= 220.01);
+    try std.testing.expect(wide.width() <= 900.01);
+    try std.testing.expect(tableBlockHeight(text, 0, text.len, 220) >= tableBlockHeight(text, 0, text.len, 900));
+    const header = nextSourceLine(text, 0);
+    const body_top = TABLE_TOOLBAR_H + narrow.rowHeight(header.line);
+    const first_cell_x: f32 = 1 + narrow.pad;
+    const row_offset = md.tableRowDisplayOffsetWithin(text, 0, text.len, 1);
+    try std.testing.expectEqual(row_offset, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, first_cell_x, body_top + TABLE_CELL_PAD_Y + 1));
+    const second_cell_x = 1 + narrow.widths[0] + narrow.pad * 2 + 1;
+    const display = try md.allocDisplayText(std.testing.allocator, text);
+    defer std.testing.allocator.free(display);
+    const offset = tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, second_cell_x, body_top + TABLE_CELL_PAD_Y + 1);
+    try std.testing.expectEqualStrings("C:/", display[offset..][0..3]);
+    try std.testing.expectEqual(display.len, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, 0, 10000));
+    var copy_ctx = struct {
+        count: usize = 0,
+        fn check(ctx: *@This(), block: CopyBlock) void {
+            ctx.count += 1;
+            std.debug.assert(block.start == 0 and block.end == text.len);
+            std.debug.assert(block.button.top_px + block.button.h <= TABLE_TOOLBAR_H);
+        }
+    }{};
+    forEachCopyBlock(text, 0, 0, 220, &copy_ctx, @TypeOf(copy_ctx).check);
+    try std.testing.expectEqual(@as(usize, 1), copy_ctx.count);
+    const sparse = "| Name | Path |\n| --- | --- |\n| short\n| next | value |\n";
+    const sparse_table = TableLayout.init(sparse, 0, sparse.len, 220);
+    const sparse_top = TABLE_TOOLBAR_H + sparse_table.rowHeight(nextSourceLine(sparse, 0).line);
+    const sparse_offset = md.tableRowDisplayOffsetWithin(sparse, 0, sparse.len, 1);
+    try std.testing.expectEqual(sparse_offset + "short".len, tableByteOffsetForPoint(sparse, 0, sparse.len, 220, 0, 0, 219, sparse_top + 6));
+}
+
+test "table line wrapping preserves UTF-8 boundaries and right alignment" {
+    var lines = TableCellLines{ .text = "中文😀abc", .width = 30, .alignment = .right };
+    var bytes: usize = 0;
+    while (lines.next()) |line| {
+        try std.testing.expect(std.unicode.utf8ValidateSlice(line.text));
+        try std.testing.expectEqual(bytes, line.offset);
+        try std.testing.expect(line.inset >= 0);
+        bytes += line.text.len;
+    }
+    try std.testing.expectEqual(@as(usize, "中文😀abc".len), bytes);
 }
