@@ -4,7 +4,55 @@
 //! copy all agree. No rendering, no AppWindow, std-only.
 const std = @import("std");
 
-pub const TABLE_MAX_COLS: usize = 8;
+pub const TABLE_MAX_COLS: usize = 32;
+
+pub const TableAlignment = enum { left, center, right };
+
+/// Keep short columns compact and give long cells the remaining wrap width.
+pub fn fitTableWidths(widths: []f32, available: f32, minimum: f32) void {
+    if (widths.len == 0) return;
+    const floor = @min(minimum, available / @as(f32, @floatFromInt(widths.len)));
+    var total: f32 = 0;
+    for (widths) |*width| {
+        width.* = @max(floor, width.*);
+        total += width.*;
+    }
+    if (total <= available) return;
+    var low = floor;
+    var high = total;
+    for (0..32) |_| {
+        const cap = (low + high) / 2;
+        var used: f32 = 0;
+        for (widths) |width| used += @min(width, cap);
+        if (used > available) high = cap else low = cap;
+    }
+    for (widths) |*width| width.* = @min(width.*, low);
+}
+
+pub fn tableAlignment(cell: []const u8) TableAlignment {
+    const value = std.mem.trim(u8, cell, " \t");
+    if (std.mem.endsWith(u8, value, ":")) {
+        return if (std.mem.startsWith(u8, value, ":")) .center else .right;
+    }
+    return .left;
+}
+
+/// Small cells stay on the caller's stack; long paths/content are never cut
+/// at the old 256-byte boundary. The model and renderer use the same bytes.
+pub const CellText = struct {
+    text: []const u8,
+    owned: ?[]u8 = null,
+
+    pub fn init(scratch: []u8, source: []const u8) CellText {
+        if (source.len <= scratch.len) return .{ .text = cleanInline(scratch, source) };
+        const owned = std.heap.page_allocator.alloc(u8, source.len) catch return .{ .text = source };
+        return .{ .text = cleanInline(owned, source), .owned = owned };
+    }
+
+    pub fn deinit(self: CellText) void {
+        if (self.owned) |owned| std.heap.page_allocator.free(owned);
+    }
+};
 
 pub const SourceLine = struct {
     line: []const u8,
@@ -41,7 +89,11 @@ pub fn isMarkdownTableStart(text: []const u8, start: usize) bool {
     if (!looksLikeTableRow(first.line)) return false;
     if (first.next >= text.len) return false;
     const second = nextSourceLine(text, first.next);
-    return isTableSeparatorLine(second.line);
+    if (!isTableSeparatorLine(second.line)) return false;
+    var header: [TABLE_MAX_COLS][]const u8 = undefined;
+    var separator: [TABLE_MAX_COLS][]const u8 = undefined;
+    const count = parseTableRowCells(first.line, &header);
+    return count > 0 and count == parseTableRowCells(second.line, &separator);
 }
 
 pub fn tableBlockEnd(text: []const u8, start: usize) usize {
@@ -52,6 +104,8 @@ pub fn tableBlockEnd(text: []const u8, start: usize) usize {
         const line = nextSourceLine(text, cursor);
         const trimmed = std.mem.trim(u8, line.line, " \t");
         if (trimmed.len == 0 or !looksLikeTableRow(line.line) or isTableSeparatorLine(line.line)) break;
+        var cells: [TABLE_MAX_COLS][]const u8 = undefined;
+        if (parseTableRowCells(line.line, &cells) == 0) break;
         cursor = line.next;
     }
     return cursor;
@@ -61,16 +115,25 @@ pub fn parseTableRowCells(line: []const u8, out: *[TABLE_MAX_COLS][]const u8) us
     var trimmed = std.mem.trim(u8, line, " \t");
     if (trimmed.len == 0) return 0;
     if (trimmed[0] == '|') trimmed = trimmed[1..];
-    if (trimmed.len > 0 and trimmed[trimmed.len - 1] == '|') trimmed = trimmed[0 .. trimmed.len - 1];
+    if (trimmed.len > 0 and trimmed[trimmed.len - 1] == '|' and !isEscaped(trimmed, trimmed.len - 1)) trimmed = trimmed[0 .. trimmed.len - 1];
 
     var count: usize = 0;
-    var parts = std.mem.splitScalar(u8, trimmed, '|');
-    while (parts.next()) |part| {
-        if (count >= TABLE_MAX_COLS) break;
-        out[count] = std.mem.trim(u8, part, " \t");
+    var start: usize = 0;
+    for (0..trimmed.len + 1) |i| {
+        if (i < trimmed.len and (trimmed[i] != '|' or isEscaped(trimmed, i))) continue;
+        // Unsupported oversized tables fall back to text, never lose columns.
+        if (count >= TABLE_MAX_COLS) return 0;
+        out[count] = std.mem.trim(u8, trimmed[start..i], " \t");
         count += 1;
+        start = i + 1;
     }
     return count;
+}
+
+fn isEscaped(text: []const u8, index: usize) bool {
+    var start = index;
+    while (start > 0 and text[start - 1] == '\\') : (start -= 1) {}
+    return (index - start) % 2 == 1;
 }
 
 pub fn looksLikeTableRow(line: []const u8) bool {
@@ -87,16 +150,11 @@ pub fn isTableSeparatorLine(line: []const u8) bool {
     for (cells[0..count]) |cell| {
         const trimmed = std.mem.trim(u8, cell, " \t");
         if (trimmed.len == 0) return false;
-        var dash_count: usize = 0;
-        for (trimmed) |ch| {
-            if (ch == '-') {
-                dash_count += 1;
-                continue;
-            }
-            if (ch == ':') continue;
-            return false;
-        }
-        if (dash_count == 0) return false;
+        var dashes = trimmed;
+        if (dashes[0] == ':') dashes = dashes[1..];
+        if (dashes.len > 0 and dashes[dashes.len - 1] == ':') dashes = dashes[0 .. dashes.len - 1];
+        if (dashes.len == 0) return false;
+        for (dashes) |ch| if (ch != '-') return false;
     }
     return true;
 }
@@ -183,6 +241,30 @@ pub fn cleanInline(buf: []u8, text: []const u8) []const u8 {
     var i: usize = 0;
     while (i < text.len and pos < buf.len) {
         const ch = text[i];
+        if (ch == '\\' and i + 1 < text.len and std.ascii.isPrint(text[i + 1]) and !std.ascii.isAlphanumeric(text[i + 1]) and text[i + 1] != ' ') {
+            buf[pos] = text[i + 1];
+            pos += 1;
+            i += 2;
+            continue;
+        }
+        if (ch == '`') {
+            var run_end = i + 1;
+            while (run_end < text.len and text[run_end] == '`') : (run_end += 1) {}
+            if (std.mem.indexOf(u8, text[run_end..], text[i..run_end])) |close| {
+                var code_i = run_end;
+                while (code_i < run_end + close and pos < buf.len) : (code_i += 1) {
+                    // GFM table pipes are escaped even inside code spans.
+                    if (text[code_i] == '\\' and code_i + 1 < run_end + close and text[code_i + 1] == '|') code_i += 1;
+                    buf[pos] = text[code_i];
+                    pos += 1;
+                }
+                i = run_end + close + (run_end - i);
+                continue;
+            }
+            pos = appendSlice(buf, pos, text[i..run_end]);
+            i = run_end;
+            continue;
+        }
         if (ch == '<') {
             while (i < text.len and text[i] != '>') : (i += 1) {}
             if (i < text.len) i += 1;
@@ -260,10 +342,10 @@ pub const CleanedLine = struct {
 /// line heights); both must be updated together when new constructs are added.
 pub fn cleanedLine(buf: *[1024]u8, raw_line: []const u8, in_code: bool) CleanedLine {
     const trimmed = std.mem.trimLeft(u8, raw_line, " \t");
-    if (trimmed.len == 0) return .{ .style = .blank };
     if (isFence(trimmed)) return .{ .style = .fence, .fence_label = fenceLanguage(trimmed) };
+    if (in_code) return .{ .style = .code, .text = raw_line };
+    if (trimmed.len == 0) return .{ .style = .blank };
     if (isHorizontalRule(trimmed)) return .{ .style = .rule };
-    if (in_code) return .{ .style = .code, .text = cleanPlain(buf, raw_line) };
     if (headingBody(trimmed)) |heading| {
         return .{ .style = .heading, .text = cleanInline(buf, heading.body), .heading_level = @intCast(heading.level) };
     }
@@ -304,7 +386,9 @@ pub fn appendTableBlockDisplay(
         for (0..count) |i| {
             if (i > 0) try out.appendSlice(allocator, " | ");
             var clean_buf: [256]u8 = undefined;
-            try out.appendSlice(allocator, cleanInline(&clean_buf, cells[i]));
+            const cell = CellText.init(&clean_buf, cells[i]);
+            defer cell.deinit();
+            try out.appendSlice(allocator, cell.text);
         }
         try out.append(allocator, '\n');
     }
@@ -349,7 +433,9 @@ fn tableRowDisplayLen(line: []const u8) usize {
     for (0..count) |i| {
         if (i > 0) total += 3; // " | "
         var clean_buf: [256]u8 = undefined;
-        total += cleanInline(&clean_buf, cells[i]).len;
+        const cell = CellText.init(&clean_buf, cells[i]);
+        defer cell.deinit();
+        total += cell.text.len;
     }
     return total;
 }
@@ -451,4 +537,52 @@ test "allocDisplayText plain text is unchanged except trailing newline" {
     const out = try allocDisplayText(testing.allocator, "alpha beta gamma");
     defer testing.allocator.free(out);
     try testing.expectEqualStrings("alpha beta gamma\n", out);
+}
+
+test "GFM tables accept omitted outer pipes and escaped code pipes" {
+    const text = "名称 | 值\n:--- | ---:\n中文😀 | `a\\|b_*<c>`\n";
+    try testing.expect(isMarkdownTableStart(text, 0));
+    const out = try allocDisplayText(testing.allocator, text);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("名称 | 值\n中文😀 | a|b_*<c>\n", out);
+    try testing.expectEqual(out.len, tableBlockDisplayLen(text, 0, text.len));
+    try testing.expectEqual(TableAlignment.center, tableAlignment(":---:"));
+    try testing.expectEqual(TableAlignment.right, tableAlignment("---:"));
+    try testing.expectEqual(TableAlignment.left, tableAlignment(":---"));
+}
+
+test "table recognition rejects mismatched and invalid delimiters" {
+    try testing.expect(!isMarkdownTableStart("a | b\n--- | --- | ---\n", 0));
+    try testing.expect(!isMarkdownTableStart("a | b\n--- | :-:-\n", 0));
+    try testing.expect(!isTableSeparatorLine("| ::--- | --- |"));
+    try testing.expect(!isMarkdownTableStart("a | b\n--- |", 0));
+    var cells: [TABLE_MAX_COLS][]const u8 = undefined;
+    try testing.expectEqual(@as(usize, 2), parseTableRowCells("| a | b\\|", &cells));
+    try testing.expectEqualStrings("b\\|", cells[1]);
+}
+
+test "long UTF-8 table cells are fully copied and offsets agree" {
+    const content = "长路径😀/" ** 100;
+    const text = "| path |\n| --- |\n| `" ++ content ++ "` |\n";
+    const out = try allocDisplayText(testing.allocator, text);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("path\n" ++ content ++ "\n", out);
+    try testing.expectEqual(out.len, tableBlockDisplayLen(text, 0, text.len));
+    try testing.expectEqual(@as(usize, 5), tableRowDisplayOffsetWithin(text, 0, text.len, 1));
+}
+
+test "column allocation fits narrow panels and preserves compact columns" {
+    var widths = [_]f32{ 32, 900, 80 };
+    fitTableWidths(&widths, 300, 56);
+    try testing.expectApproxEqAbs(@as(f32, 56), widths[0], 0.01);
+    try testing.expectApproxEqAbs(@as(f32, 80), widths[2], 0.01);
+    try testing.expectApproxEqAbs(@as(f32, 300), widths[0] + widths[1] + widths[2], 0.01);
+    fitTableWidths(&widths, 30, 56);
+    for (widths) |width| try testing.expectApproxEqAbs(@as(f32, 10), width, 0.01);
+}
+
+test "fenced code preserves indentation blank lines and rule-looking source" {
+    const out = try allocDisplayText(testing.allocator, "```\n    x = a * b\n\n---\n```\n");
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("\n    x = a * b\n\n---\n\n", out);
 }

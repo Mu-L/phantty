@@ -218,6 +218,21 @@ demand.
 - `/forget <name>` deletes a memory by its name.
 - Set `ai-memory-enabled = false` in the config to turn the system off.
 
+## Markdown in replies
+
+AI Chat tabs and the Copilot sidebar share the native Markdown renderer. Tables
+have header shading, cell borders, and left/center/right alignment from their
+delimiter row. Long cells wrap within the message width; narrow panels give
+more space to long columns. Tables currently wrap rather than scroll horizontally.
+Escaped pipes (`\|`), Chinese text, emoji, and code-span punctuation are preserved,
+and cells longer than 256 bytes are no longer truncated.
+
+Drag across table text to select and copy it. The table's copy button sits above
+the header and copies the original Markdown; code-block copy buttons retain the
+original code, including indentation. Replies use native text drawing, so model
+HTML and scripts are never executed. This remains a lightweight Markdown subset,
+not a full browser-based GFM renderer.
+
 ## Markdown Export
 
 Use the command center to run `Export Copilot Markdown` for the full transcript,
