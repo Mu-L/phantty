@@ -493,7 +493,16 @@ pub fn renderTitlebar(window_width: f32, window_height: f32, titlebar_h: f32) vo
         if (tab.activeTab()) |active_tab| {
             const title = active_tab.getTitle();
             const text_y = layout.top_y + (titlebar_h - font.g_titlebar_cell_height) / 2;
-            _ = renderTextLimited(title, layout.title_text_x, text_y, blend(bg, fg, 0.90), layout.title_text_max_w);
+            var latency_buf: [64]u8 = undefined;
+            const latency = AppWindow.sshLatencyLabel(&latency_buf);
+            const title_status = titlebar_layout.titleStatusLayout(
+                layout.title_text_x,
+                layout.title_text_max_w,
+                titlebarTextWidth(latency),
+                font.g_titlebar_cell_height / 2,
+            );
+            _ = renderTextLimited(title, layout.title_text_x, text_y, blend(bg, fg, 0.90), title_status.title_width);
+            _ = renderTextLimited(latency, title_status.status_x, text_y, blend(bg, fg, 0.80), title_status.status_width);
         }
 
         renderCaptionButton(captionButtonVisual(.minimize, layout.caption_buttons.minimize, top_hovered == .minimize));

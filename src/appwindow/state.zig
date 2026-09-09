@@ -9,6 +9,7 @@ pub const RemoteAiInputSink = remote_state.AiInputSink;
 pub const State = struct {
     window: WindowState = .{},
     remote: RemoteState = .{},
+    ssh_latency: @import("../ssh/latency.zig").Monitor = .{},
 };
 
 test "appwindow state aggregates window and remote state" {

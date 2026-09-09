@@ -40,6 +40,16 @@ pub const WhatsNewState = struct {
     scroll: i64 = 0,
 };
 
+pub const IntegrationPromptState = struct {
+    visible: bool = false,
+    scroll: i64 = 0,
+};
+
+pub const CommandHost = struct {
+    toggle_ssh_latency: ?*const fn () void = null,
+    ssh_latency_label: ?*const fn ([]u8) []const u8 = null,
+};
+
 pub const OverlayState = struct {
     settings: settings_page.State = .{},
     toasts: toasts.State = .{},
@@ -53,6 +63,8 @@ pub const OverlayState = struct {
     command_palette: command_palette_state.State = .{},
     btw: btw_conversation.State = .{},
     whats_new: WhatsNewState = .{},
+    integration_prompt: IntegrationPromptState = .{},
+    command_host: CommandHost = .{},
     snippets: SnippetState = .{},
     // Dismiss the floating key overlay only for the key the user copied.
     remote_key_dismissed_digest: ?[32]u8 = null,

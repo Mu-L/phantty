@@ -2,6 +2,35 @@
 //! from titlebar.zig. No AppWindow/font/GL imports — runs in the fast suite.
 const std = @import("std");
 
+pub const TitleStatusLayout = struct {
+    title_width: f32,
+    status_x: f32,
+    status_width: f32,
+};
+
+/// Keep a live status inside the title's existing space, clear of caption and
+/// toolbar buttons. Both strings can use the normal ellipsis renderer.
+pub fn titleStatusLayout(x: f32, available_width: f32, status_width: f32, gap: f32) TitleStatusLayout {
+    const available = @max(0, available_width);
+    const width = @min(available, @max(0, status_width));
+    return .{
+        .title_width = @max(0, available - width - (if (width > 0) gap else 0)),
+        .status_x = x + available - width,
+        .status_width = width,
+    };
+}
+
+test "title status fits its allocated space at narrow and wide sizes" {
+    for ([_]f32{ 0, 20, 100, 1000 }) |width| {
+        const layout = titleStatusLayout(46, width, 130, 12);
+        try std.testing.expect(layout.title_width >= 0);
+        try std.testing.expect(layout.status_x >= 46);
+        try std.testing.expect(layout.status_x + layout.status_width <= 46 + width);
+        try std.testing.expect(46 + layout.title_width <= layout.status_x);
+    }
+    try std.testing.expectEqual(@as(f32, 300), titleStatusLayout(46, 300, 0, 12).title_width);
+}
+
 /// Is point (px, py) inside the rect [left, left+width) x [top, top+height)?
 pub fn pointInRect(px: f32, py: f32, left: f32, top: f32, width: f32, height: f32) bool {
     return px >= left and px < left + width and py >= top and py < top + height;

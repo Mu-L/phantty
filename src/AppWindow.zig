@@ -45,6 +45,7 @@ const thread_message = @import("appwindow/thread_message.zig");
 const skill_center_actions = @import("appwindow/skill_center_actions.zig");
 const copilot_sidebar = @import("appwindow/copilot_sidebar.zig");
 const appwindow_state = @import("appwindow/state.zig");
+const ssh_latency = @import("ssh/latency.zig");
 const render_diagnostics = @import("render_diagnostics.zig");
 const ime_caret = @import("ime_caret.zig");
 const hit_test = @import("input/hit_test.zig");
@@ -1548,6 +1549,38 @@ threadlocal var g_appwindow_state: appwindow_state.State = .{};
 
 fn windowState() *appwindow_state.WindowState {
     return &g_appwindow_state.window;
+}
+
+fn activeSshLatencyTarget() ?ssh_latency.Target {
+    const surface = activeSurface() orelse return null;
+    const conn = surface.ssh_connection orelse return null;
+    return ssh_latency.Target.fromConnection(@intFromPtr(surface), &conn);
+}
+
+fn toggleSshLatency() void {
+    const monitor = &g_appwindow_state.ssh_latency;
+    const target = activeSshLatencyTarget();
+    if (!monitor.enabled and target == null) {
+        overlays.showStatusToast(i18n.s().toast_ssh_latency_requires_ssh);
+        applyUiEffect(.repaint);
+        return;
+    }
+    applyUiEffect(monitor.toggle());
+    applyUiEffect(monitor.tick(target, std.time.milliTimestamp(), window_backend.postWakeup));
+    if (monitor.enabled and target != null and target.?.via_jump) {
+        overlays.showStatusToast(i18n.s().toast_ssh_latency_jump_unsupported);
+    }
+}
+
+pub fn sshLatencyLabel(buf: []u8) []const u8 {
+    return g_appwindow_state.ssh_latency.label(buf);
+}
+
+fn sshLatencyPaletteLabel(buf: []u8) []const u8 {
+    const monitor = &g_appwindow_state.ssh_latency;
+    if (!monitor.enabled) return i18n.s().ssh_latency_off;
+    const label = monitor.label(buf);
+    return if (label.len != 0) label else i18n.s().ssh_latency_on;
 }
 
 fn remoteState() *appwindow_state.RemoteState {
@@ -7419,6 +7452,9 @@ fn deliverSessionToast(session: *ai_chat.Session, body: []const u8, is_viewing: 
 /// Internal main loop - called by AppWindow.run() after init() has set up globals.
 fn runMainLoop(self: *AppWindow) !void {
     const allocator = self.allocator;
+    g_appwindow_state.ssh_latency.allocator = allocator;
+    defer g_appwindow_state.ssh_latency.deinit();
+    overlays.bindCommandHost(.{ .toggle_ssh_latency = toggleSshLatency, .ssh_latency_label = sshLatencyPaletteLabel });
 
     // Use stored config values from init()
     const requested_font = g_requested_font;
@@ -7969,10 +8005,7 @@ fn runMainLoop(self: *AppWindow) !void {
         tmux_controller.tickAll(allocator, term_cols, term_rows);
         overlays.tickSessionLauncher();
         overlays.tickQuickAiVerify();
-        if (file_explorer.tickAsync()) {
-            g_force_rebuild = true;
-            g_cells_valid = false;
-        }
+        if (file_explorer.tickAsync()) applyUiEffect(.repaint);
         syncTransferToastFromFileExplorer();
         if (tickAllPreviewPanes()) {
             g_force_rebuild = true;
@@ -8115,6 +8148,7 @@ fn runMainLoop(self: *AppWindow) !void {
         syncBackendSurfaceSize(fb_width, fb_height);
 
         const gate_now = std.time.milliTimestamp();
+        applyUiEffect(g_appwindow_state.ssh_latency.tick(activeSshLatencyTarget(), gate_now, window_backend.postWakeup));
         const visible = window_backend.isVisible(win);
         const vis: render_gate.Visibility = if (!visible)
             .hidden

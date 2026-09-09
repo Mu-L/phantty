@@ -135,6 +135,17 @@ keybind = global:ctrl+backquote=toggle_quake
 
 Use `keybind = clear` before custom bindings if you want to remove all defaults and rebuild the table from scratch. To confirm the running desktop version, open the command center (`Ctrl+Shift+P` on Windows, `Cmd+Shift+P` on macOS), type `version`, and press Enter.
 
+Choose **Toggle SSH Latency** in the command center to show the current SSH
+host's Ping round-trip time in the titlebar, refreshed every 5 seconds. The
+command's metadata column also shows the current reading or On/Off, including
+when the titlebar is too narrow to show the full label. Switching sessions or
+split focus switches the monitored host; run the command again to stop.
+`RTT …` means the first probe is pending; `RTT —` means no reply or probing is
+unavailable. This is direct-host ICMP latency, so hosts that block Ping and
+SSH routes through `ProxyJump` cannot report a value. The switch is local to
+the window, starts off, and uses WispTerm-managed SSH session metadata; local
+sessions hide the readout.
+
 > **macOS modifier mapping:** most shortcuts use **Cmd** in place of Ctrl and **Opt** in place of Alt. Two exceptions keep Ctrl to avoid colliding with system shortcuts: **Ctrl+`** (Quake — `Cmd+`` is the system window cycler) and **Ctrl+Tab** / **Ctrl+Shift+Tab** (tab switching — `Cmd+Tab` is the system app switcher).
 
 | Action | Windows / Linux | macOS |
