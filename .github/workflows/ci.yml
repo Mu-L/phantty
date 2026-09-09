@@ -177,7 +177,15 @@ jobs:
         with:
           version: 0.15.2
       - name: Build COM extension and test driver
-        run: zig build shell-extension-test
+        shell: pwsh
+        run: |
+          # This DLL has no terminal dependencies. Compile it directly so the
+          # integration test does not fetch Ghostty's unrelated build graph.
+          New-Item -ItemType Directory -Force zig-out\bin | Out-Null
+          zig c++ -std=c++17 -DUNICODE -D_UNICODE -shared src/platform/explorer/shell_extension.cpp -lole32 -lshell32 -lshlwapi -luuid -o zig-out/bin/wispterm-shell-extension.dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          zig c++ -std=c++17 -DUNICODE -D_UNICODE src/platform/explorer/shell_extension_test.cpp -lole32 -lshell32 -lshlwapi -luuid -o zig-out/bin/wispterm-shell-extension-test.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Sign and test identity registration on disposable runner
         shell: pwsh
         run: |

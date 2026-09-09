@@ -66,7 +66,9 @@ an end-user-enabled context menu. No Windows release certificate is checked in.
 Each package registers `IExplorerCommand` using `windows.comServer` and
 `windows.fileExplorerContextMenus`. A sparse identity package points to the
 existing EXE installation through `Add-AppxPackage -ExternalLocation`, preserving
-the portable distribution. Extension DLLs and their MSIX/manifest are stored in
+the portable distribution. The identity explicitly disables registry/AppData
+write virtualization so the terminal continues using its existing user configuration and state paths.
+Extension DLLs and their MSIX/manifest are stored in
 immutable version/content directories so updates don't overwrite Explorer's
 loaded DLL. The installer retains prior directories for registration rollback;
 uninstall removes them after unregistration, with a notice if Windows still
