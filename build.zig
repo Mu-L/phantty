@@ -674,6 +674,36 @@ pub fn build(b: *std.Build) void {
             });
             askpass_exe.subsystem = .Windows;
             b.installArtifact(askpass_exe);
+
+            const shell_mod = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+                .link_libcpp = true,
+            });
+            shell_mod.addCSourceFile(.{
+                .file = b.path("src/platform/explorer/shell_extension.cpp"),
+                .flags = &.{ "-std=c++17", "-DUNICODE", "-D_UNICODE" },
+            });
+            for ([_][]const u8{ "ole32", "shell32", "shlwapi", "uuid" }) |lib| shell_mod.linkSystemLibrary(lib, .{});
+            const shell_extension = b.addLibrary(.{
+                .name = "wispterm-shell-extension",
+                .linkage = .dynamic,
+                .root_module = shell_mod,
+            });
+            b.installArtifact(shell_extension);
+            const shell_step = b.step("shell-extension", "Build the Explorer context menu DLL");
+            shell_step.dependOn(&b.addInstallArtifact(shell_extension, .{}).step);
+            const shell_test_mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true, .link_libcpp = true });
+            shell_test_mod.addCSourceFile(.{
+                .file = b.path("src/platform/explorer/shell_extension_test.cpp"),
+                .flags = &.{ "-std=c++17", "-DUNICODE", "-D_UNICODE" },
+            });
+            for ([_][]const u8{ "ole32", "shell32", "shlwapi", "uuid" }) |lib| shell_test_mod.linkSystemLibrary(lib, .{});
+            const shell_test = b.addExecutable(.{ .name = "wispterm-shell-extension-test", .root_module = shell_test_mod });
+            const shell_test_step = b.step("shell-extension-test", "Build the native Explorer COM test driver (run debug/test-shell-integration.ps1)");
+            shell_test_step.dependOn(&b.addInstallArtifact(shell_extension, .{}).step);
+            shell_test_step.dependOn(&b.addInstallArtifact(shell_test, .{}).step);
         }
 
         // Standalone CLI client for the agent terminal control API. Lean: it

@@ -164,3 +164,52 @@ jobs:
       # sockets) reached release. This guards it where it actually bit.
       - name: Agent-control socket round-trip
         run: zig build test-ctl
+
+  windows-shell-integration:
+    name: Windows Explorer integration
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build COM extension and test driver
+        shell: pwsh
+        run: |
+          # This DLL has no terminal dependencies. Compile it directly so the
+          # integration test does not fetch Ghostty's unrelated build graph.
+          New-Item -ItemType Directory -Force zig-out\bin | Out-Null
+          zig c++ -std=c++17 -DUNICODE -D_UNICODE -shared src/platform/explorer/shell_extension.cpp -lole32 -lshell32 -lshlwapi -luuid -o zig-out/bin/wispterm-shell-extension.dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          zig c++ -std=c++17 -DUNICODE -D_UNICODE src/platform/explorer/shell_extension_test.cpp -lole32 -lshell32 -lshlwapi -luuid -o zig-out/bin/wispterm-shell-extension-test.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Sign and test identity registration on disposable runner
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=WispTerm CI Test' `
+            -KeyUsage DigitalSignature -HashAlgorithm SHA256 -KeyAlgorithm RSA -KeyLength 2048 `
+            -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2) `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3','2.5.29.19={text}')
+          $cerPath = Join-Path $env:RUNNER_TEMP 'wispterm-shell-test.cer'
+          try {
+            Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+            # AppX deployment and Authenticode use different trust policies.
+            # These stores belong only to this disposable CI VM. Machine
+            # stores avoid CurrentUser Root's interactive trust confirmation.
+            Write-Host 'Preparing disposable VM certificate trust'
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+            $env:WISPTERM_WINDOWS_SIGN_THUMBPRINT = $cert.Thumbprint
+            Write-Host 'Building and testing signed identity registration'
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File debug\test-shell-integration.ps1 -RegisterPackage
+            if ($LASTEXITCODE -ne 0) { throw 'Explorer integration tests failed.' }
+          } finally {
+            Remove-Item "Cert:\LocalMachine\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\Root\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item $cerPath -ErrorAction SilentlyContinue
+          }

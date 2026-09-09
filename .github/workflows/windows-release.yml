@@ -42,6 +42,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-zig-0.15.2-
 
+      - name: Configure optional Windows identity-package signing
+        shell: pwsh
+        env:
+          SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if (!$env:SIGNING_PFX) {
+            Write-Warning 'Windows signing is not configured. Context menu identity packages will be unsigned and cannot be enabled on end-user PCs.'
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'wispterm-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
+            $password = ConvertTo-SecureString $env:SIGNING_PASSWORD -AsPlainText -Force
+            $certs = @(Import-PfxCertificate -FilePath $pfx -Password $password -CertStoreLocation Cert:\CurrentUser\My | Where-Object HasPrivateKey)
+            if ($certs.Count -ne 1) { throw 'Expected one Windows signing certificate with a private key.' }
+            $cert = $certs[0]
+            "WISPTERM_WINDOWS_SIGN_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
+          } finally { Remove-Item $pfx -Force -ErrorAction SilentlyContinue }
+
       - name: Fetch dependencies and build release
         shell: pwsh
         run: |
@@ -97,7 +117,13 @@ jobs:
           )
           $replaceFiles = @(
             "Replace-WispTerm.cmd",
-            "replace-install.ps1"
+            "replace-install.ps1",
+            "Add-Context-Menu.cmd",
+            "Remove-Context-Menu.cmd",
+            "context-menu.ps1",
+            "Uninstall-WispTerm.cmd",
+            "uninstall.ps1",
+            "shell-integration\identity.json"
           )
 
           if (!(Test-Path $portableExe)) {
@@ -282,4 +308,12 @@ jobs:
               --verify-tag `
               --generate-notes `
               --notes $notes
+          }
+
+      - name: Remove imported Windows signing identity
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:WISPTERM_WINDOWS_SIGN_THUMBPRINT) {
+            Remove-Item "Cert:\CurrentUser\My\$env:WISPTERM_WINDOWS_SIGN_THUMBPRINT" -ErrorAction SilentlyContinue
           }

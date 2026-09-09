@@ -122,6 +122,8 @@ Options:
 
 Configuration file details are in [Configuration](docs/configuration.md).
 
+Windows builds include an optional **Open in WispTerm** Explorer context menu for folders and folder backgrounds. Enable it with `Add-Context-Menu.cmd` from a trusted signed bundle; use `Remove-Context-Menu.cmd` to remove it. See [Windows context menu setup](docs/windows-context-menu.md) for signing requirements and installation details.
+
 ## Keyboard shortcuts
 
 Default app-level chords are defined in [`src/keybind.zig`](src/keybind.zig) and can be remapped with repeated `keybind = ...` lines in the config file. Some modal/editor-local keys are still handled by the focused overlay first (command center navigation, session launcher editing, AI Chat input, and similar).

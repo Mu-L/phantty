@@ -2,6 +2,8 @@
 # this script. Double-click Replace-WispTerm.cmd; do not run the exe from
 # inside the zip (Explorer would extract only that one file).
 
+param([switch]$EnableContextMenu)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -126,6 +128,11 @@ $destDir = [System.IO.Path]::GetFullPath($destDir)
 $destExe = Join-Path $destDir 'wispterm.exe'
 
 if ($destDir -eq $sourceDirFull) {
+    $menuScript = Join-Path $destDir 'context-menu.ps1'
+    if (Test-Path -LiteralPath $menuScript) {
+        $menuAction = if ($EnableContextMenu) { 'Install' } else { 'Refresh' }
+        & $menuScript -Action $menuAction -InstallDir $destDir
+    }
     Write-Host (T 'This folder is already the install. Starting WispTerm.' '当前文件夹就是安装目录，正在启动 WispTerm。')
     Start-Process -FilePath $destExe -WorkingDirectory $destDir
     exit 0
@@ -151,11 +158,26 @@ $payloads = @(
     'OpenConsole.exe'
     'Replace-WispTerm.cmd'
     'replace-install.ps1'
+    'context-menu.ps1'
+    'Add-Context-Menu.cmd'
+    'Remove-Context-Menu.cmd'
+    'uninstall.ps1'
+    'Uninstall-WispTerm.cmd'
 )
 foreach ($name in $payloads) {
     $src = Join-Path $sourceDir $name
     if (Test-Path -LiteralPath $src) {
         Copy-LockedFile $src (Join-Path $destDir $name)
+    }
+}
+
+$sourceIntegration = Join-Path $sourceDir 'shell-integration'
+if (Test-Path -LiteralPath $sourceIntegration) {
+    # Retain previous immutable extension/package directories for rollback.
+    # Explorer can keep its old DLL loaded until it releases the COM server.
+    Get-ChildItem -LiteralPath $sourceIntegration -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($sourceDir.Length).TrimStart('\')
+        Copy-LockedFile $_.FullName (Join-Path $destDir $relative)
     }
 }
 
@@ -167,5 +189,10 @@ if (Test-Path -LiteralPath $srcPlugins) {
 }
 
 Write-StartMenuShortcut $destExe $destDir
+$menuScript = Join-Path $destDir 'context-menu.ps1'
+if (Test-Path -LiteralPath $menuScript) {
+    $menuAction = if ($EnableContextMenu) { 'Install' } else { 'Refresh' }
+    & $menuScript -Action $menuAction -InstallDir $destDir
+}
 Start-Process -FilePath $destExe -WorkingDirectory $destDir
 Write-Host (T 'Done. WispTerm is starting.' '完成，正在启动 WispTerm。')
