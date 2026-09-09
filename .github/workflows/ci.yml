@@ -196,12 +196,16 @@ jobs:
           $cerPath = Join-Path $env:RUNNER_TEMP 'wispterm-shell-test.cer'
           try {
             Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
-            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+            # AppX deployment and Authenticode use different trust policies.
+            # These stores belong only to this disposable CI VM.
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
             $env:WISPTERM_WINDOWS_SIGN_THUMBPRINT = $cert.Thumbprint
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File debug\test-shell-integration.ps1 -RegisterPackage
             if ($LASTEXITCODE -ne 0) { throw 'Explorer integration tests failed.' }
           } finally {
-            Remove-Item "Cert:\CurrentUser\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\Root\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
             Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
             Remove-Item $cerPath -ErrorAction SilentlyContinue
           }

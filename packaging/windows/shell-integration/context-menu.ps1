@@ -92,7 +92,7 @@ if ($dev) {
 } else {
     $signature = Get-AuthenticodeSignature -LiteralPath $packagePath
     if ($signature.Status -ne 'Valid') {
-        throw (T "Context menu package signature is not trusted ($($signature.Status)). Install a release with a trusted signed identity package. No certificates were imported." "右键菜单身份包的签名不受信任（$($signature.Status)）。请使用附带受信任签名身份包的版本；本脚本未导入任何证书。")
+        throw (T "Context menu package signature is not trusted ($($signature.Status): $($signature.StatusMessage)). Install a release with a trusted signed identity package. No certificates were imported." "右键菜单身份包的签名不受信任（$($signature.Status)）。请使用附带受信任签名身份包的版本；本脚本未导入任何证书。")
     }
 }
 # Refuse to replace a registration we cannot roll back or attribute to WispTerm.

@@ -98,8 +98,19 @@ $appManifest = Join-Path $integration 'wispterm.manifest'
 </assembly>
 "@, $utf8)
 $mt = Find-SdkTool 'mt.exe'
-& $mt -nologo -manifest $appManifest "-outputresource:$exe;#1"
-if ($LASTEXITCODE -ne 0) { throw 'Embedding package identity in wispterm.exe failed.' }
+# mt.exe mishandles UNC manifest paths (including WSL checkouts). Give it
+# short native paths and copy back only after successful resource editing.
+$resourceStage = Join-Path ([IO.Path]::GetTempPath()) ('WispTermResources-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $resourceStage | Out-Null
+try {
+    $localExe = Join-Path $resourceStage 'wispterm.exe'
+    $localManifest = Join-Path $resourceStage 'wispterm.manifest'
+    Copy-Item -LiteralPath $exe -Destination $localExe
+    Copy-Item -LiteralPath $appManifest -Destination $localManifest
+    & $mt -nologo -manifest $localManifest "-outputresource:$localExe;#1"
+    if ($LASTEXITCODE -ne 0) { throw 'Embedding package identity in wispterm.exe failed.' }
+    Copy-Item -LiteralPath $localExe -Destination $exe -Force
+} finally { Remove-Item -LiteralPath $resourceStage -Recurse -Force }
 if ($certificate) {
     $signTool = Find-SdkTool 'signtool.exe'
     $signArgs = @('sign','/fd','SHA256','/sha1',$certificate.Thumbprint)
