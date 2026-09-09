@@ -12,7 +12,7 @@
 #include "command_line.h"
 
 #define CHECK(value) do { if (!(value)) { std::cerr << "FAILED line " << __LINE__ << ": " #value "\n"; return 1; } } while (0)
-#define OK(call) CHECK(SUCCEEDED(call))
+#define OK(call) do { HRESULT result=(call); if(FAILED(result)) { std::cerr << "FAILED line " << __LINE__ << " HRESULT=0x" << std::hex << static_cast<unsigned long>(result) << ": " #call "\n"; return 1; } } while(0)
 template<class T> struct Ptr { T* p=nullptr; ~Ptr(){if(p)p->Release();} T* operator->(){return p;} T** put(){return &p;} };
 static std::wstring cwd() { std::wstring s(32768,L'\0'); s.resize(GetCurrentDirectoryW(static_cast<DWORD>(s.size()),s.data())); return s; }
 static int record(const wchar_t* dir) {
@@ -127,7 +127,8 @@ static int run(const wchar_t* source) {
 int main() {
     int count=0;LPWSTR* args=CommandLineToArgvW(GetCommandLineW(),&count);
     if(count==3 && std::wstring(args[1])==L"--working-directory")return record(args[2]);
+    std::cerr << "Starting COM test, argc=" << count << "\n";
     if(count!=2)return 2;
-    if(FAILED(CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED)))return 2;
+    OK(CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED));
     int result=run(args[1]);LocalFree(args);CoUninitialize();return result;
 }

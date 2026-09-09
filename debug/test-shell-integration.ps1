@@ -47,7 +47,7 @@ try {
         Push-Location $scratch
         try {
             & (Join-Path $install 'wispterm.exe') --registered
-            if ($LASTEXITCODE -ne 0) { throw 'Packaged COM activation/launch tests failed.' }
+            if ($LASTEXITCODE -ne 0) { throw ('Packaged COM activation/launch tests failed; exit=0x{0:X8}' -f ($LASTEXITCODE -band 0xffffffffL)) }
         } finally { Pop-Location }
         Copy-Item -LiteralPath $install -Destination $second -Recurse
         $secondMenu = Join-Path $second 'context-menu.ps1'
