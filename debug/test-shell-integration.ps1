@@ -12,6 +12,7 @@ $second = Join-Path $scratch 'relocated install'
 New-Item -ItemType Directory -Force $install | Out-Null
 try {
     Copy-Item -LiteralPath $test -Destination (Join-Path $install 'wispterm.exe')
+    Copy-Item -LiteralPath $test -Destination (Join-Path $install 'shell-test-client.exe')
     & (Join-Path $repo 'packaging\windows\shell-integration\build-package.ps1') -TargetDir $install -ExtensionPath $dll -TimestampUrl ""
     $metadata = Get-Content -Raw (Join-Path $install 'shell-integration\identity.json') | ConvertFrom-Json
     [xml]$manifest = Get-Content -Raw (Join-Path $install $metadata.Manifest)
@@ -46,8 +47,12 @@ try {
         if (!(& $menu -Action Status).Enabled) { throw 'Registration status was not enabled.' }
         Push-Location $scratch
         try {
-            & (Join-Path $install 'wispterm.exe') --registered
-            if ($LASTEXITCODE -ne 0) { throw ('Packaged COM activation/launch tests failed; exit=0x{0:X8}' -f ($LASTEXITCODE -band 0xffffffffL)) }
+            & (Join-Path $install 'shell-test-client.exe') --registered
+            if ($LASTEXITCODE -ne 0) {
+                $testExit = $LASTEXITCODE
+                Get-Content (Join-Path $scratch 'shell-test-failure.log') -ErrorAction SilentlyContinue
+                throw ('Packaged COM activation/launch tests failed; exit=0x{0:X8}' -f ($testExit -band 0xffffffffL))
+            }
         } finally { Pop-Location }
         Copy-Item -LiteralPath $install -Destination $second -Recurse
         $secondMenu = Join-Path $second 'context-menu.ps1'
@@ -56,7 +61,7 @@ try {
         if (!(& $secondMenu -Action Status).Enabled) { throw 'Removing an old copy removed the active registration.' }
         Push-Location $scratch
         try {
-            & (Join-Path $second 'wispterm.exe') --registered
+            & (Join-Path $second 'shell-test-client.exe') --registered
             if ($LASTEXITCODE -ne 0) { throw 'Relocated packaged COM activation failed.' }
         } finally { Pop-Location }
         & $secondMenu -Action Remove
