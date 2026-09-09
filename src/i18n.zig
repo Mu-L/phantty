@@ -311,6 +311,10 @@ pub const Strings = struct {
     toast_recipe_restore_failed: []const u8,
     toast_recipe_ai_failed: []const u8,
     toast_recipe_open_hint: []const u8,
+    toast_ssh_latency_requires_ssh: []const u8,
+    toast_ssh_latency_jump_unsupported: []const u8,
+    ssh_latency_on: []const u8,
+    ssh_latency_off: []const u8,
 };
 
 const en = Strings{
@@ -600,6 +604,10 @@ const en = Strings{
     .toast_recipe_restore_failed = "Recipe could not be restored",
     .toast_recipe_ai_failed = "Some AI tabs could not be restored",
     .toast_recipe_open_hint = "Type a recipe name in the Command Palette and press Enter",
+    .toast_ssh_latency_requires_ssh = "Open a WispTerm SSH session first",
+    .toast_ssh_latency_jump_unsupported = "Ping cannot measure an SSH route through a jump host",
+    .ssh_latency_on = "On",
+    .ssh_latency_off = "Off",
 };
 
 const zh_CN = Strings{
@@ -889,6 +897,10 @@ const zh_CN = Strings{
     .toast_recipe_restore_failed = "Recipe 恢复失败",
     .toast_recipe_ai_failed = "部分 AI 标签页无法恢复",
     .toast_recipe_open_hint = "在命令面板输入 Recipe 名称并回车即可打开",
+    .toast_ssh_latency_requires_ssh = "请先打开一个 WispTerm SSH 会话",
+    .toast_ssh_latency_jump_unsupported = "Ping 暂不支持测量经过跳板机的 SSH 路径",
+    .ssh_latency_on = "已开启",
+    .ssh_latency_off = "已关闭",
 };
 
 // Set once at startup before any UI thread exists (see main.zig startup wiring).
@@ -1016,6 +1028,7 @@ pub fn commandTitle(action: CommandAction) ?[]const u8 {
         .close_split_or_tab => "关闭面板 / 标签页",
         .toggle_sidebar => "切换侧边栏",
         .toggle_file_explorer => "切换文件浏览器",
+        .toggle_ssh_latency => "开 / 关 SSH 延迟显示",
         .toggle_browser_panel => "切换浏览器",
         .open_jupyter_panel => "打开 Jupyter",
         .toggle_quake => "切换下拉终端",
@@ -1082,6 +1095,7 @@ pub fn commandDetail(action: CommandAction) ?[]const u8 {
         .close_split_or_tab => "关闭当前面板或标签页；再按一次关闭最后一个面板",
         .toggle_sidebar => "显示或隐藏标签页侧边栏",
         .toggle_file_explorer => "显示或隐藏左侧文件浏览器",
+        .toggle_ssh_latency => "每 5 秒显示当前 SSH 服务器的 Ping 往返延迟 RTT",
         .toggle_browser_panel => "为本地或 SSH 网址打开已配置的浏览器",
         .open_jupyter_panel => "打开面板并粘贴正在运行的 Jupyter 网址（本地或 SSH）",
         .toggle_quake => "显示或隐藏下拉式终端窗口",

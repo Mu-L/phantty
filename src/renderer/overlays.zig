@@ -140,6 +140,14 @@ pub fn releaseThreadState() void {
     }
 }
 
+pub fn bindCommandHost(host: overlay_state.CommandHost) void {
+    overlayState().command_host = host;
+}
+
+fn integrationPromptState() *overlay_state.IntegrationPromptState {
+    return &overlayState().integration_prompt;
+}
+
 fn settingsState() *settings_page.State {
     return &overlayState().settings;
 }
@@ -234,8 +242,6 @@ const update_prompt_model = @import("overlays/update_prompt_model.zig");
 const UpdatePromptAction = update_prompt_model.UpdatePromptAction;
 const md = @import("../markdown_text.zig");
 const whats_new_model = @import("overlays/whats_new_model.zig");
-threadlocal var g_integration_prompt_visible: bool = false;
-threadlocal var g_integration_prompt_scroll: i64 = 0;
 threadlocal var g_update_prompt_rect: ?DebugLineRect = null;
 
 pub const CloseConfirmVariant = confirm_modals.CloseConfirmVariant;
@@ -746,16 +752,16 @@ pub fn restoreDefaultsConfirmExecuteAt(xpos: f64, ypos: f64, window_width: f32, 
 }
 
 pub fn integrationPromptOpen() void {
-    g_integration_prompt_scroll = 0;
-    g_integration_prompt_visible = true;
+    integrationPromptState().scroll = 0;
+    integrationPromptState().visible = true;
 }
 
 pub fn integrationPromptClose() void {
-    g_integration_prompt_visible = false;
+    integrationPromptState().visible = false;
 }
 
 pub fn integrationPromptVisible() bool {
-    return g_integration_prompt_visible;
+    return integrationPromptState().visible;
 }
 
 fn copyIntegrationPrompt() void {
@@ -772,27 +778,27 @@ fn integrationPromptCopySucceeded() void {
 }
 
 pub fn integrationPromptHandleKey(ev: input_key.KeyEvent) void {
-    if (!g_integration_prompt_visible) return;
+    if (!integrationPromptState().visible) return;
     switch (ev.key) {
         .escape => integrationPromptClose(),
         .enter => copyIntegrationPrompt(),
-        .page_up => g_integration_prompt_scroll -= 8,
-        .page_down => g_integration_prompt_scroll += 8,
-        .arrow_up => g_integration_prompt_scroll -= 1,
-        .arrow_down => g_integration_prompt_scroll += 1,
-        .home => g_integration_prompt_scroll = 0,
-        .end => g_integration_prompt_scroll = std.math.maxInt(i32),
+        .page_up => integrationPromptState().scroll -= 8,
+        .page_down => integrationPromptState().scroll += 8,
+        .arrow_up => integrationPromptState().scroll -= 1,
+        .arrow_down => integrationPromptState().scroll += 1,
+        .home => integrationPromptState().scroll = 0,
+        .end => integrationPromptState().scroll = std.math.maxInt(i32),
         else => {},
     }
 }
 
 pub fn integrationPromptHandleScroll(delta_y: f64) void {
-    if (!g_integration_prompt_visible) return;
-    g_integration_prompt_scroll += if (delta_y > 0) @as(i64, -3) else 3;
+    if (!integrationPromptState().visible) return;
+    integrationPromptState().scroll += if (delta_y > 0) @as(i64, -3) else 3;
 }
 
 pub fn integrationPromptExecuteAt(xpos: f64, ypos: f64, window_width: f32, window_height: f32) bool {
-    if (!g_integration_prompt_visible) return false;
+    if (!integrationPromptState().visible) return false;
     const layout = integrationPromptLayout(window_width, window_height);
     if (pointInTopRect(xpos, ypos, layout.close_x, layout.close_top_px, layout.close_w, layout.close_h)) {
         copyIntegrationPrompt();
@@ -879,6 +885,7 @@ fn executeCommand(action: CommandAction) void {
         .close_split_or_tab => AppWindow.input.closePanelOrTab(),
         .toggle_sidebar => AppWindow.input.toggleSidebar(),
         .toggle_file_explorer => AppWindow.input.toggleFileExplorer(),
+        .toggle_ssh_latency => if (overlayState().command_host.toggle_ssh_latency) |toggle| toggle(),
         .toggle_browser_panel => AppWindow.input.toggleBrowserPanel(),
         .open_jupyter_panel => AppWindow.input.openJupyterPanel(),
         .toggle_quake => AppWindow.toggleQuakeVisibility(),
@@ -1350,11 +1357,39 @@ fn commandEntryKeybindAction(action: CommandAction) ?keybind.Action {
 }
 
 fn commandEntryShortcut(entry: CommandEntry, buf: []u8) []const u8 {
+    if (entry.action == .toggle_ssh_latency) {
+        if (overlayState().command_host.ssh_latency_label) |label| return label(buf);
+    }
     if (commandEntryKeybindAction(entry.action)) |action| {
         if (keybind.formatActionShortcut(&AppWindow.g_keybinds, action, buf)) |shortcut| return shortcut;
         return "";
     }
     return entry.shortcut;
+}
+
+test "SSH latency command dispatches through the host and shows its reading" {
+    const Fake = struct {
+        var called = false;
+        fn toggle() void {
+            called = true;
+        }
+        fn label(_: []u8) []const u8 {
+            return "RTT 24.5 ms";
+        }
+    };
+    const previous_host = overlayState().command_host;
+    defer bindCommandHost(previous_host);
+    Fake.called = false;
+    bindCommandHost(.{ .toggle_ssh_latency = Fake.toggle, .ssh_latency_label = Fake.label });
+    for (COMMAND_ENTRIES) |entry| {
+        if (entry.action != .toggle_ssh_latency) continue;
+        executeCommand(entry.action);
+        try std.testing.expect(Fake.called);
+        var buf: [64]u8 = undefined;
+        try std.testing.expectEqualStrings("RTT 24.5 ms", commandEntryShortcut(entry, &buf));
+        return;
+    }
+    return error.MissingSshLatencyCommand;
 }
 
 fn rebuildPaletteScratch() void {
@@ -8083,7 +8118,7 @@ test "overlays: anyBlockingOverlayVisible reflects each modal overlay" {
     const saved_palette = commandPaletteState().visible;
     const saved_settings_visible = settingsState().visible;
     const saved_whats_new = whatsNewState().visible;
-    const saved_integration_prompt = g_integration_prompt_visible;
+    const saved_integration_prompt = integrationPromptState().visible;
     const saved_confirms = overlayState().confirms;
     const saved_session = g_session_launcher_visible;
     const saved_ssh_list = g_ssh_list_visible;
@@ -8095,7 +8130,7 @@ test "overlays: anyBlockingOverlayVisible reflects each modal overlay" {
         commandPaletteState().visible = saved_palette;
         settingsState().visible = saved_settings_visible;
         whatsNewState().visible = saved_whats_new;
-        g_integration_prompt_visible = saved_integration_prompt;
+        integrationPromptState().visible = saved_integration_prompt;
         overlayState().confirms = saved_confirms;
         g_session_launcher_visible = saved_session;
         g_ssh_list_visible = saved_ssh_list;
@@ -8109,7 +8144,7 @@ test "overlays: anyBlockingOverlayVisible reflects each modal overlay" {
     commandPaletteState().visible = false;
     settingsState().visible = false;
     whatsNewState().visible = false;
-    g_integration_prompt_visible = false;
+    integrationPromptState().visible = false;
     overlayState().confirms = .{};
     g_session_launcher_visible = false;
     g_ssh_list_visible = false;
@@ -8133,9 +8168,9 @@ test "overlays: anyBlockingOverlayVisible reflects each modal overlay" {
     try std.testing.expect(anyBlockingOverlayVisible());
     whatsNewState().visible = false;
 
-    g_integration_prompt_visible = true;
+    integrationPromptState().visible = true;
     try std.testing.expect(anyBlockingOverlayVisible());
-    g_integration_prompt_visible = false;
+    integrationPromptState().visible = false;
 
     closeConfirmOpen(.window, .window_generic);
     try std.testing.expect(anyBlockingOverlayVisible());
@@ -8149,33 +8184,33 @@ test "overlays: anyBlockingOverlayVisible reflects each modal overlay" {
 }
 
 test "overlays: integration prompt opens scrolls and closes" {
-    const saved_visible = g_integration_prompt_visible;
-    const saved_scroll = g_integration_prompt_scroll;
+    const saved_visible = integrationPromptState().visible;
+    const saved_scroll = integrationPromptState().scroll;
     defer {
-        g_integration_prompt_visible = saved_visible;
-        g_integration_prompt_scroll = saved_scroll;
+        integrationPromptState().visible = saved_visible;
+        integrationPromptState().scroll = saved_scroll;
     }
 
     integrationPromptOpen();
     try std.testing.expect(integrationPromptVisible());
-    try std.testing.expectEqual(@as(i64, 0), g_integration_prompt_scroll);
+    try std.testing.expectEqual(@as(i64, 0), integrationPromptState().scroll);
 
     integrationPromptHandleKey(.{ .key = .page_down });
-    try std.testing.expect(g_integration_prompt_scroll > 0);
+    try std.testing.expect(integrationPromptState().scroll > 0);
 
     integrationPromptHandleKey(.{ .key = .escape });
     try std.testing.expect(!integrationPromptVisible());
 }
 
 test "overlays: successful integration prompt copy closes modal and shows toast" {
-    const saved_visible = g_integration_prompt_visible;
+    const saved_visible = integrationPromptState().visible;
     const saved_toast = overlayState().toasts.copy;
     defer {
-        g_integration_prompt_visible = saved_visible;
+        integrationPromptState().visible = saved_visible;
         overlayState().toasts.copy = saved_toast;
     }
 
-    g_integration_prompt_visible = true;
+    integrationPromptState().visible = true;
     overlayState().toasts.copy = .{};
 
     integrationPromptCopySucceeded();
@@ -8439,14 +8474,14 @@ fn integrationPromptLineCount(text: []const u8, max_w: f32) usize {
 
 fn integrationPromptClampedScroll(total_lines: usize, visible_rows: usize) usize {
     if (total_lines <= visible_rows) return 0;
-    if (g_integration_prompt_scroll <= 0) return 0;
+    if (integrationPromptState().scroll <= 0) return 0;
     const max_scroll = total_lines - visible_rows;
-    const requested: usize = @intCast(g_integration_prompt_scroll);
+    const requested: usize = @intCast(integrationPromptState().scroll);
     return @min(requested, max_scroll);
 }
 
 pub fn renderIntegrationPrompt(window_width: f32, window_height: f32) void {
-    const fade = autoFade(.integration_prompt, g_integration_prompt_visible) orelse return;
+    const fade = autoFade(.integration_prompt, integrationPromptState().visible) orelse return;
     ui_pipeline.g_ui_fade = fade;
     defer ui_pipeline.g_ui_fade = 1.0;
 
@@ -8516,7 +8551,7 @@ pub fn renderIntegrationPrompt(window_width: f32, window_height: f32) void {
     const text_w = prompt_w - 24;
     const total_lines = integrationPromptLineCount(prompt, text_w);
     const scroll = integrationPromptClampedScroll(total_lines, visible_rows);
-    g_integration_prompt_scroll = @intCast(scroll);
+    integrationPromptState().scroll = @intCast(scroll);
 
     var drawn: usize = 0;
     var line_index: usize = 0;

@@ -323,6 +323,8 @@ test {
     _ = @import("ctl/transport.zig");
     _ = @import("ctl/ui_state.zig");
     _ = @import("preview/png_dimensions.zig");
+    _ = @import("platform/ping.zig");
+    _ = @import("ssh/latency.zig");
     _ = @import("preview/pdf.zig");
     _ = @import("preview/gallery.zig");
     _ = @import("preview/diagnostics.zig");
