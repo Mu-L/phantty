@@ -123,6 +123,8 @@ wispterm [options]
 
 配置文件细节见[配置](docs/configuration.md)。
 
+Windows 版本支持可选的 **在 WispTerm 中打开** 文件夹右键菜单（含文件夹空白区域）。在附带受信任签名身份包的发行版中运行 `Add-Context-Menu.cmd` 启用，运行 `Remove-Context-Menu.cmd` 移除。签名要求和安装说明见 [Windows 右键菜单](docs/windows-context-menu.md)。
+
 ## 键盘快捷键
 
 应用级默认组合键定义在 [`src/keybind.zig`](src/keybind.zig)，可在配置文件中用重复的

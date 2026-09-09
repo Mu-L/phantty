@@ -164,3 +164,36 @@ jobs:
       # sockets) reached release. This guards it where it actually bit.
       - name: Agent-control socket round-trip
         run: zig build test-ctl
+
+  windows-shell-integration:
+    name: Windows Explorer integration
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build COM extension and test driver
+        run: zig build shell-extension-test
+      - name: Sign and test identity registration on disposable runner
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=WispTerm CI Test' `
+            -KeyUsage DigitalSignature -HashAlgorithm SHA256 -KeyAlgorithm RSA -KeyLength 2048 `
+            -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2) `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3','2.5.29.19={text}')
+          $cerPath = Join-Path $env:RUNNER_TEMP 'wispterm-shell-test.cer'
+          try {
+            Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+            $env:WISPTERM_WINDOWS_SIGN_THUMBPRINT = $cert.Thumbprint
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File debug\test-shell-integration.ps1 -RegisterPackage
+            if ($LASTEXITCODE -ne 0) { throw 'Explorer integration tests failed.' }
+          } finally {
+            Remove-Item "Cert:\CurrentUser\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item $cerPath -ErrorAction SilentlyContinue
+          }

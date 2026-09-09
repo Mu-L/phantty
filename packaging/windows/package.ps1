@@ -161,6 +161,11 @@ function Copy-PortablePayload {
     if (-not (Test-Path $replacePs1)) { throw "Replace script was not found: $replacePs1" }
     Copy-Item -Path $replaceCmd -Destination (Join-Path $TargetDir 'Replace-WispTerm.cmd') -Force
     Copy-Item -Path $replacePs1 -Destination (Join-Path $TargetDir 'replace-install.ps1') -Force
+
+    $extension = Join-Path (Split-Path -Parent $BinaryPath) 'wispterm-shell-extension.dll'
+    & (Join-Path $PSScriptRoot 'shell-integration\build-package.ps1') -TargetDir $TargetDir -ExtensionPath $extension
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'uninstall.ps1') -Destination $TargetDir -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-WispTerm.cmd') -Destination $TargetDir -Force
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
