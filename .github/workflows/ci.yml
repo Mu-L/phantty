@@ -187,6 +187,7 @@ jobs:
           zig c++ -std=c++17 -DUNICODE -D_UNICODE src/platform/explorer/shell_extension_test.cpp -lole32 -lshell32 -lshlwapi -luuid -o zig-out/bin/wispterm-shell-extension-test.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Sign and test identity registration on disposable runner
+        timeout-minutes: 8
         shell: pwsh
         run: |
           $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=WispTerm CI Test' `
@@ -197,15 +198,18 @@ jobs:
           try {
             Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
             # AppX deployment and Authenticode use different trust policies.
-            # These stores belong only to this disposable CI VM.
+            # These stores belong only to this disposable CI VM. Machine
+            # stores avoid CurrentUser Root's interactive trust confirmation.
+            Write-Host 'Preparing disposable VM certificate trust'
             Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
-            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
             $env:WISPTERM_WINDOWS_SIGN_THUMBPRINT = $cert.Thumbprint
+            Write-Host 'Building and testing signed identity registration'
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File debug\test-shell-integration.ps1 -RegisterPackage
             if ($LASTEXITCODE -ne 0) { throw 'Explorer integration tests failed.' }
           } finally {
             Remove-Item "Cert:\LocalMachine\TrustedPeople\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\CurrentUser\Root\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\Root\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
             Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
             Remove-Item $cerPath -ErrorAction SilentlyContinue
           }
