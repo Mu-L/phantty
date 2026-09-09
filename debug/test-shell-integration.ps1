@@ -29,7 +29,7 @@ try {
     & $menu -Action Refresh # Must not opt a fresh installation into registration.
     $after = & $menu -Action Status
     if ($before.Enabled -ne $after.Enabled) { throw 'Refresh enabled an unregistered installation.' }
-    if (!$RegisterPackage -and !(Get-AuthenticodeSignature (Join-Path $install $metadata.Package)).Status.Equals('Valid')) {
+    if (!$RegisterPackage -and ((Get-AuthenticodeSignature (Join-Path $install $metadata.Package)).Status -ne 'Valid')) {
         $rejected = $false
         try { & $menu -Action Install } catch { $rejected = $true }
         if (!$rejected -or (& $menu -Action Status).Enabled) { throw 'Untrusted package was not rejected before registration.' }
