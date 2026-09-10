@@ -97,7 +97,8 @@ keybind = global:ctrl+backquote=toggle_quake
 
 在命令中心的 **Copilot History** 中，直接输入可按标题/模型搜索已保存对话，`Tab` 在
 **全部 / 侧栏 / 标签页**来源筛选之间切换，Up/Down 移动，`Enter` 重开，`Delete` 删除
-选中行，`Esc` 返回普通命令中心。
+选中行，`Esc` 返回普通命令中心。点击 **对话中心** 或按 `Ctrl+Enter` 打开对话中心
+（按日期筛选、预览、继续对话）。
 
 ---
 *另见：[[配置|Configuration-zh]] · [[标签、分屏与面板|Tabs-Splits-Panels-zh]]*

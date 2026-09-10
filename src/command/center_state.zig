@@ -52,6 +52,7 @@ pub const CommandAction = enum {
     show_whats_new,
     show_integration_prompt,
     open_memory_center,
+    open_conversation_center,
     open_skill_center,
     open_port_forwarding,
     split_preview,
@@ -80,6 +81,7 @@ pub const command_entries = [_]CommandEntry{
     .{ .title = "Manage AI Profiles", .detail = "Create, edit, or delete saved AI profiles", .shortcut = "", .action = .manage_ai_profiles },
     .{ .title = "MCP Servers", .detail = "Add, edit, test, or remove MCP tool servers", .shortcut = "", .action = .manage_mcp_servers },
     .{ .title = "Copilot History", .detail = "Open the command-center Copilot history picker", .shortcut = "", .action = .select_agent_history },
+    .{ .title = "Conversation Center", .detail = "Browse, filter, preview, and resume saved conversations", .shortcut = "", .action = .open_conversation_center },
     .{ .title = "Fork Session", .detail = "Copy the current Copilot conversation into a new independent session", .shortcut = "", .action = .fork_session },
     .{ .title = "Skill Center", .detail = "Manage Claude Code / Codex skills and local executable tools", .shortcut = "", .action = .open_skill_center },
     .{ .title = "Split Right", .detail = "Create a panel to the right", .shortcut = "", .action = .split_right },
@@ -398,6 +400,10 @@ test "command center includes What's New action" {
 
 test "command center includes Toggle Split Layout action" {
     try expectCommandEntry("Toggle Split Layout", .transpose_split);
+}
+
+test "command center includes Conversation Center action" {
+    try expectCommandEntry("Conversation Center", .open_conversation_center);
 }
 
 test "command center includes Skill Center action" {

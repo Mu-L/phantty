@@ -250,6 +250,8 @@ AI Chat 标签页和 Copilot 侧栏对话。这个选择器会按本地日期分
 **过去一周**、**更早**），显示相对更新时间，并按对话标题和模型名搜索。按 `Tab` 在
 **全部**、**侧栏**、**标签页**来源之间切换；用 Up/Down 移动，`Enter` 重开，`Delete`
 删除选中的已保存对话，`Esc` 返回普通命令中心。
+点击 **对话中心**（或 `Ctrl+Enter`）打开对话中心工作台，可按来源和日期筛选、预览
+记录并 resume。
 
 打开会话启动器（`Ctrl+Shift+T`）选择 **Sessions**，在本地、WSL 或 SSH 目标上浏览
 Codex、Claude Code、Kimi Code 的对话记录。WispTerm 连接目标，扫描 `$HOME/.codex`、

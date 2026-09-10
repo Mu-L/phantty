@@ -247,6 +247,8 @@ test {
     _ = @import("memory_digest/provider_grok.zig");
     _ = @import("memory_center/session.zig");
     _ = @import("renderer/memory_center_renderer.zig");
+    _ = @import("conversation_center/session.zig");
+    _ = @import("renderer/conversation_center_renderer.zig");
     _ = @import("renderer/overlays/toasts.zig");
     _ = @import("renderer/overlays/confirm_modals.zig");
     _ = @import("renderer/overlays/ssh_profiles.zig");

@@ -278,6 +278,8 @@ shows relative update times, and searches conversation titles plus model names.
 Press `Tab` to cycle the source chip between **All**, **Sidebar**, and **Tab**;
 use Up/Down to move, `Enter` to reopen, `Delete` to remove the selected saved
 conversation, and `Esc` to return to the normal command center.
+Click **Open Center** (or `Ctrl+Enter`) to open **Conversation Center**, a workbench
+for filtering by source and date, previewing transcripts, and resuming.
 
 Open the session launcher (`Ctrl+Shift+T`) and choose **Sessions** to browse
 Codex, Claude Code, and Kimi Code transcripts on a Local, WSL, or SSH target.
