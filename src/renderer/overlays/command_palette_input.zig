@@ -13,6 +13,7 @@ pub const Action = enum {
     clear_filter,
     delete_history,
     cycle_history_source,
+    open_conversation_center,
 };
 
 pub fn keyAction(ev: platform_input.KeyEvent, history_visible: bool) Action {
@@ -21,7 +22,7 @@ pub fn keyAction(ev: platform_input.KeyEvent, history_visible: bool) Action {
             platform_input.key_escape => .leave_history,
             platform_input.key_up => .move_up,
             platform_input.key_down => .move_down,
-            platform_input.key_enter => .execute,
+            platform_input.key_enter => if (ev.ctrl or ev.super) .open_conversation_center else .execute,
             platform_input.key_delete => .delete_history,
             platform_input.key_backspace => .backspace,
             platform_input.key_tab => .cycle_history_source,
@@ -80,6 +81,17 @@ test "command palette input maps history escape to leave history" {
 
     try std.testing.expectEqual(Action.leave_history, action);
     try std.testing.expect(effectForAction(action).needs_rebuild);
+}
+
+test "command palette history Ctrl+Enter opens conversation center" {
+    const action = keyAction(.{
+        .key_code = platform_input.key_enter,
+        .ctrl = true,
+        .shift = false,
+        .alt = false,
+        .super = false,
+    }, true);
+    try std.testing.expectEqual(Action.open_conversation_center, action);
 }
 
 test "command palette char input repaints only for plain text" {

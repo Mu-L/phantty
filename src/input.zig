@@ -2879,6 +2879,12 @@ fn dispatchChar(ev: platform_input.CharEvent) ui_effect.UiEffect {
         }
         return .none;
     }
+    if (AppWindow.activeConversationCenter() != null) {
+        if (!ev.ctrl and !ev.alt and !ev.super) {
+            _ = AppWindow.conversationCenterInsertCodepoint(ev.codepoint);
+        }
+        return .none;
+    }
     if (AppWindow.activeSkillCenter() != null) {
         if (command_char_suppressors.skill_center) |codepoint| {
             const suppress = !ev.ctrl and !ev.alt and !ev.super and ev.codepoint == codepoint;
@@ -3194,6 +3200,7 @@ fn applyCommandPaletteAction(action: command_palette_input.Action, history_visib
         .clear_filter => overlays.commandPaletteClearFilter(),
         .delete_history => _ = overlays.commandPaletteDeleteSelectedAgentHistory(),
         .cycle_history_source => overlays.commandPaletteCycleHistorySource(),
+        .open_conversation_center => overlays.commandPaletteOpenConversationCenter(),
     }
 }
 
@@ -3550,6 +3557,61 @@ fn dispatchKey(ev: platform_input.KeyEvent) ui_effect.UiEffect {
             },
             0x44 => if (plain and !ev.shift) {
                 _ = AppWindow.runMemoryDigestFromCenter();
+                return .none;
+            },
+            else => {},
+        }
+        return .none;
+    }
+
+    if (AppWindow.activeConversationCenter()) |center| {
+        switch (ev.key_code) {
+            platform_input.key_up => {
+                if (center.focus == .filters) {
+                    _ = AppWindow.conversationCenterMoveFilter(-1);
+                } else if (center.focus == .detail) {
+                    _ = AppWindow.conversationCenterScrollDetail(-1);
+                } else {
+                    _ = AppWindow.conversationCenterMoveSelection(-1);
+                }
+                return .none;
+            },
+            platform_input.key_down => {
+                if (center.focus == .filters) {
+                    _ = AppWindow.conversationCenterMoveFilter(1);
+                } else if (center.focus == .detail) {
+                    _ = AppWindow.conversationCenterScrollDetail(1);
+                } else {
+                    _ = AppWindow.conversationCenterMoveSelection(1);
+                }
+                return .none;
+            },
+            platform_input.key_left => {
+                _ = AppWindow.conversationCenterCycleFocus(-1);
+                return .none;
+            },
+            platform_input.key_right, platform_input.key_tab => {
+                _ = AppWindow.conversationCenterCycleFocus(1);
+                return .none;
+            },
+            platform_input.key_enter => {
+                _ = AppWindow.resumeConversationCenterSelection();
+                return .none;
+            },
+            platform_input.key_delete => {
+                _ = AppWindow.deleteConversationCenterSelection();
+                return .none;
+            },
+            platform_input.key_backspace => {
+                _ = AppWindow.conversationCenterBackspaceQuery();
+                return .none;
+            },
+            platform_input.key_page_up => {
+                _ = AppWindow.conversationCenterScrollDetail(-8);
+                return .none;
+            },
+            platform_input.key_page_down => {
+                _ = AppWindow.conversationCenterScrollDetail(8);
                 return .none;
             },
             else => {},
@@ -5905,6 +5967,10 @@ fn handleMouseButton(ev: platform_input.MouseButtonEvent) void {
                 if (AppWindow.memoryCenterHandleMousePress(xpos, ypos)) return;
             }
 
+            if (AppWindow.activeConversationCenter() != null) {
+                if (AppWindow.conversationCenterHandleMousePress(xpos, ypos)) return;
+            }
+
             // AI copilot sidebar (terminal tabs). When the panel is visible,
             // a click inside its rect focuses the copilot and routes one-shot
             // interactions (stop / missing-api-key / message toggle / copy /
@@ -7142,6 +7208,10 @@ fn handleMouseWheel(ev: platform_input.MouseWheelEvent) void {
     }
     if (AppWindow.activeMemoryCenter() != null) {
         _ = AppWindow.memoryCenterHandleMouseWheel(ev.xpos, ev.ypos, @intCast(ev.delta));
+        return;
+    }
+    if (AppWindow.activeConversationCenter() != null) {
+        _ = AppWindow.conversationCenterHandleMouseWheel(ev.xpos, ev.ypos, @intCast(ev.delta));
         return;
     }
     // Skill Center list follows the selection, so the wheel moves the selection

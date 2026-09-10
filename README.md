@@ -34,7 +34,7 @@ English | [简体中文](README.zh-CN.md)
 - **Embedded browser panel** - open web URLs in a side WebView2 (Windows) or WKWebView (macOS) panel when available, with persistent SSH loopback port forwarding for profile sessions
 - **SSH port forwarding manager** - silently manage local and reverse SSH forwarding rules from a dedicated tab
 - **AI Agent sessions** - launch OpenAI-compatible Agent tabs, configure profiles, restore history, export Markdown transcripts, and distill reusable local skills
-- **Command-center Copilot History** - search saved AI Chat and Copilot sidebar conversations, grouped by date, with source filters for sidebar vs tab sessions
+- **Command-center Copilot History** - search saved AI Chat and Copilot sidebar conversations, grouped by date, with source filters for sidebar vs tab sessions. Open **Conversation Center** from the picker for date filters, transcript preview, and resume
 - **In-session model switching** - use `/model` or click the model label to move an active AI chat/Copilot session to another saved profile with a context summary handoff
 - **Prompt queue** - prompts submitted while a Copilot request is running are queued and auto-sent in order when the session goes idle; review, reorder, edit, or drop them from the queue panel
 - **Send to Chat** - send the terminal selection (or recent output tail) to Copilot as a collapsible context card, via the command palette or a bindable `send_to_copilot` keybind action
@@ -181,6 +181,9 @@ sessions hide the readout.
 | Move selected Copilot History row | Up / Down in command-center Copilot History | Up / Down in command-center Copilot History |
 | Reopen selected Copilot History row | Enter in command-center Copilot History | Enter in command-center Copilot History |
 | Delete selected Copilot History row | Delete in command-center Copilot History | Delete in command-center Copilot History |
+| Open Conversation Center from Copilot History | Click **Open Center** / **对话中心**, or **Ctrl+Enter** | Click **Open Center** / **对话中心**, or **Cmd+Enter** |
+| Resume a conversation in Conversation Center | **Enter** | **Enter** |
+| Filter Conversation Center by source/date | Left column click, or Left/Right then Up/Down | Left column click, or Left/Right then Up/Down |
 | Edit AI History filter | Type / Backspace in AI History | Type / Backspace in AI History |
 | Move selected AI History session | Up / Down in AI History | Up / Down in AI History |
 | Resume selected AI History session | Enter in AI History | Enter in AI History |

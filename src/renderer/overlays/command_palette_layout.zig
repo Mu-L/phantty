@@ -221,6 +221,29 @@ pub fn scrollbar(layout: Layout, window_height: f32, total_results: usize, first
     };
 }
 
+pub const HistoryToolbar = struct {
+    open_x: f32,
+    open_w: f32,
+    source_x: f32,
+    source_w: f32,
+    filter_w: f32,
+};
+
+/// Right-aligned source chip and Conversation Center button in the history
+/// picker filter row. `filter_w` is the remaining width for the search field.
+pub fn historyToolbar(box_x: f32, box_w: f32, pad_x: f32, open_w: f32, source_w: f32, gap: f32) HistoryToolbar {
+    const source_x = box_x + box_w - pad_x - source_w;
+    const open_x = source_x - gap - open_w;
+    const filter_w = @max(0, open_x - (box_x + pad_x) - gap);
+    return .{
+        .open_x = open_x,
+        .open_w = open_w,
+        .source_x = source_x,
+        .source_w = source_w,
+        .filter_w = filter_w,
+    };
+}
+
 test "row capacity is capped at MAX_VISIBLE_ROWS" {
     // A very tall window with a small base/row height would otherwise fit more
     // than the cap; the result must clamp to MAX_VISIBLE_ROWS.
@@ -273,6 +296,14 @@ test "row band starts below the filter" {
     try std.testing.expectEqual(expected_row_top, l.row_top_px);
     // Row band sits strictly below the box top.
     try std.testing.expect(l.row_top_px > l.box_top_px);
+}
+
+test "history toolbar keeps source chip right-aligned and leaves filter space" {
+    const bar = historyToolbar(100, 400, 16, 80, 40, 16);
+    try std.testing.expectEqual(@as(f32, 100 + 400 - 16 - 40), bar.source_x);
+    try std.testing.expectEqual(bar.source_x - 16 - 80, bar.open_x);
+    try std.testing.expect(bar.filter_w > 0);
+    try std.testing.expect(bar.open_x > 100 + 16);
 }
 
 test "panel anchors near the top of the content area" {

@@ -122,6 +122,10 @@ relative update times, and keeps the list searchable by conversation title or
 model. Press `Tab` to cycle the source filter between `All`, `Sidebar`, and
 `Tab`; use Up/Down to move, `Enter` to reopen the selected row, `Delete` to
 remove it, and `Esc` to return to the normal command center.
+Click **Open Center** (or press `Ctrl+Enter`) to open **Conversation Center**, a
+workbench page for date filters, transcript preview, and resume. Enter resumes
+the selected conversation; already-open sessions are focused instead of
+duplicated.
 
 Open the session launcher with `Ctrl+Shift+T` and choose `Sessions` to browse
 Codex, Claude Code, and Kimi Code transcripts stored on a Local, WSL, or SSH

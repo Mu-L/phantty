@@ -17,6 +17,7 @@ const recipe_store = @import("../recipe/store.zig");
 const ai_chat = @import("../assistant/conversation/session.zig");
 const ai_history_session = @import("../terminal_agents/sessions/session.zig");
 const memory_center_session = @import("../memory_center/session.zig");
+const conversation_center_session = @import("../conversation_center/session.zig");
 const ai_history_source = @import("../terminal_agents/sessions/source.zig");
 const skill_center = @import("../skill/center.zig");
 const port_forwarding = @import("../port_forward/forwarding.zig");
@@ -68,6 +69,7 @@ pub const TabState = struct {
     ai_chat_session: ?*ai_chat.Session = null,
     ai_history_session: ?*ai_history_session.Session = null,
     memory_center_session: ?*memory_center_session.Session = null,
+    conversation_center_session: ?*conversation_center_session.Session = null,
     skill_center_session: ?*skill_center.Session = null,
     port_forwarding_session: ?*port_forwarding.Session = null,
     /// Copilot conversation for a terminal tab (Issue #98). Distinct from
@@ -94,6 +96,7 @@ pub const TabState = struct {
         ai_chat,
         ai_history,
         memory_center,
+        conversation_center,
         skill_center,
         port_forwarding,
         settings,
@@ -131,6 +134,9 @@ pub const TabState = struct {
         }
         if (self.kind == .memory_center) {
             return "Memory Center";
+        }
+        if (self.kind == .conversation_center) {
+            return i18n.s().conversation_center_title;
         }
         if (self.kind == .skill_center) {
             return i18n.s().sl_skill_center;
@@ -209,6 +215,13 @@ pub const TabState = struct {
                     session.deinit();
                     allocator.destroy(session);
                     self.memory_center_session = null;
+                }
+            },
+            .conversation_center => {
+                if (self.conversation_center_session) |session| {
+                    session.deinit();
+                    allocator.destroy(session);
+                    self.conversation_center_session = null;
                 }
             },
             .skill_center => {
@@ -518,6 +531,7 @@ pub fn spawnTabWithCommandAndCwd(allocator: std.mem.Allocator, cols: u16, rows: 
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -595,6 +609,7 @@ pub fn spawnBenchmarkTab(
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -667,6 +682,7 @@ pub fn spawnAiChatSession(allocator: std.mem.Allocator, session: *ai_chat.Sessio
     t.ai_chat_session = session;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -729,6 +745,7 @@ pub fn spawnAiHistoryTab(allocator: std.mem.Allocator, source: ai_history_source
     t.copilot_visible = false;
     t.ai_history_session = session_ptr;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
 
@@ -754,6 +771,47 @@ pub fn spawnMemoryCenterTab(allocator: std.mem.Allocator) bool {
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = session_ptr;
+    t.conversation_center_session = null;
+    t.skill_center_session = null;
+    t.port_forwarding_session = null;
+    t.copilot_session = null;
+    t.copilot_visible = false;
+    t.tmux_window_id = null;
+    t.tmux_owner = null;
+    t.tmux_name_len = 0;
+
+    g_tabs[g_tab_count] = t;
+    active_tab_state.g_active_tab = g_tab_count;
+    g_tab_count += 1;
+    return true;
+}
+
+/// Open the Conversation Center workbench. Reuses an existing tab if one is
+/// already open so the palette button does not stack duplicates.
+pub fn spawnConversationCenterTab(allocator: std.mem.Allocator) bool {
+    for (0..g_tab_count) |idx| {
+        const existing = g_tabs[idx] orelse continue;
+        if (existing.kind != .conversation_center) continue;
+        switchTab(idx);
+        return true;
+    }
+    if (g_tab_count >= MAX_TABS) return false;
+    const session_ptr = allocator.create(conversation_center_session.Session) catch return false;
+    session_ptr.* = conversation_center_session.Session.init(allocator);
+    session_ptr.tz_offset_seconds = ai_history_time.localOffsetSeconds();
+
+    const t = allocator.create(TabState) catch {
+        session_ptr.deinit();
+        allocator.destroy(session_ptr);
+        return false;
+    };
+    t.kind = .conversation_center;
+    t.tree = .empty;
+    t.focused = .root;
+    t.ai_chat_session = null;
+    t.ai_history_session = null;
+    t.memory_center_session = null;
+    t.conversation_center_session = session_ptr;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -785,6 +843,7 @@ pub fn spawnSkillCenterTab(allocator: std.mem.Allocator) bool {
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = session_ptr;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -816,6 +875,7 @@ pub fn spawnPortForwardingTab(allocator: std.mem.Allocator) bool {
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = session_ptr;
     t.copilot_session = null;
@@ -888,6 +948,13 @@ pub fn activeMemoryCenter() ?*memory_center_session.Session {
     const t = activeTab() orelse return null;
     if (t.kind != .memory_center) return null;
     return t.memory_center_session;
+}
+
+/// Active tab's Conversation Center session, or null if the active tab isn't one.
+pub fn activeConversationCenter() ?*conversation_center_session.Session {
+    const t = activeTab() orelse return null;
+    if (t.kind != .conversation_center) return null;
+    return t.conversation_center_session;
 }
 
 /// Active tab's Port Forwarding session, or null if the active tab isn't one.
@@ -1543,6 +1610,7 @@ pub fn commitTabRename() void {
                     },
                     .ai_history => {},
                     .memory_center => {},
+                    .conversation_center => {},
                     .skill_center => {},
                     .port_forwarding => {},
                     .settings => {},
@@ -2007,6 +2075,7 @@ pub fn restoreTab(
     t.ai_chat_session = null;
     t.ai_history_session = null;
     t.memory_center_session = null;
+    t.conversation_center_session = null;
     t.skill_center_session = null;
     t.port_forwarding_session = null;
     t.copilot_session = null;
@@ -2047,6 +2116,7 @@ fn applyRestoredTabMetadata(t: *TabState, snap: *const session_persist.TabSnap) 
         },
         .ai_history => {},
         .memory_center => {},
+        .conversation_center => {},
         .skill_center => {},
         .port_forwarding => {},
         .settings => {},

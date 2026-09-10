@@ -89,6 +89,7 @@ const link_open = @import("link_open.zig");
 const tmux_controller = @import("appwindow/tmux_controller.zig");
 const memory_digest_scheduler = @import("memory_digest/scheduler.zig");
 const memory_center_session = @import("memory_center/session.zig");
+const conversation_center_session = @import("conversation_center/session.zig");
 pub const font = @import("font/manager.zig");
 pub const cell_renderer = @import("renderer/cell_renderer.zig");
 const cell_pipeline = @import("renderer/cell_pipeline.zig");
@@ -138,6 +139,7 @@ else
 pub const assistant_conversation_renderer = @import("renderer/assistant/conversation.zig");
 pub const terminal_agent_sessions_renderer = @import("renderer/terminal_agents/sessions.zig");
 const memory_center_renderer = @import("renderer/memory_center_renderer.zig");
+const conversation_center_renderer = @import("renderer/conversation_center_renderer.zig");
 const skill_center_renderer = @import("renderer/skill_center_renderer.zig");
 const port_forwarding_renderer = @import("renderer/port_forwarding_renderer.zig");
 const ai_sidebar = @import("assistant/sidebar/panel.zig");
@@ -2030,6 +2032,38 @@ fn renderMemoryCenterFrame(active_tab: *TabState, fb_width: c_int, fb_height: c_
     }
 }
 
+fn renderConversationCenterFrame(active_tab: *TabState, fb_width: c_int, fb_height: c_int, titlebar_offset: f32, left_panels_w: f32, right_panels_w: f32) void {
+    gpu.state.setViewport(0, 0, @intCast(fb_width), @intCast(fb_height));
+    ui_pipeline.setProjection(@floatFromInt(fb_width), @floatFromInt(fb_height));
+    clearWithBackground(fb_width, fb_height);
+    titlebar.renderTitlebar(@floatFromInt(fb_width), @floatFromInt(fb_height), titlebar_offset);
+    titlebar.renderSidebar(@floatFromInt(fb_width), @floatFromInt(fb_height), titlebar_offset);
+    file_explorer_renderer.render(@floatFromInt(fb_width), @floatFromInt(fb_height), titlebar_offset);
+    if (active_tab.conversation_center_session) |session| {
+        conversationCenterSyncFromStore(session);
+        const draw: conversation_center_renderer.DrawContext = .{
+            .bg = g_theme.background,
+            .fg = g_theme.foreground,
+            .accent = g_theme.cursor_color,
+            .cell_h = font.g_titlebar_cell_height,
+            .fillQuad = ui_pipeline.fillQuad,
+            .fillQuadAlpha = ui_pipeline.fillQuadAlpha,
+            .renderTextLimited = titlebar.renderTextLimited,
+            .glyphAdvance = titlebar.titlebarGlyphAdvance,
+        };
+        conversation_center_renderer.render(
+            draw,
+            session,
+            std.time.milliTimestamp(),
+            @floatFromInt(fb_width),
+            @floatFromInt(fb_height),
+            titlebar_offset,
+            left_panels_w,
+            aiHistoryContentWidth(fb_width, left_panels_w, right_panels_w),
+        );
+    }
+}
+
 fn renderSkillCenterFrame(active_tab: *TabState, fb_width: c_int, fb_height: c_int, titlebar_offset: f32, left_panels_w: f32, right_panels_w: f32) void {
     gpu.state.setViewport(0, 0, @intCast(fb_width), @intCast(fb_height));
     ui_pipeline.setProjection(@floatFromInt(fb_width), @floatFromInt(fb_height));
@@ -2430,6 +2464,10 @@ pub fn activeAiHistory() ?*ai_history_session.Session {
 
 pub fn activeMemoryCenter() ?*memory_center_session.Session {
     return tab.activeMemoryCenter();
+}
+
+pub fn activeConversationCenter() ?*conversation_center_session.Session {
+    return tab.activeConversationCenter();
 }
 
 pub fn activeSkillCenter() ?*skill_center.Session {
@@ -3018,6 +3056,201 @@ pub fn memoryCenterHandleMouseWheel(xpos: i32, ypos: i32, delta: i32) bool {
         .detail => session.scrollDetailBy(direction * 3),
         .source, .row, .setting, .run_digest, .none => session.moveSelection(direction),
     }
+    markUiDirty();
+    return true;
+}
+
+fn conversationCenterHitArgs() ?struct {
+    session: *conversation_center_session.Session,
+    height: f32,
+    titlebar: f32,
+    left: f32,
+    width: f32,
+    cell_h: f32,
+} {
+    const session = activeConversationCenter() orelse return null;
+    const win = g_window orelse return null;
+    const fb = window_backend.framebufferSize(win);
+    const left = leftPanelsWidth();
+    return .{
+        .session = session,
+        .height = @floatFromInt(fb.height),
+        .titlebar = currentTitlebarHeight(),
+        .left = left,
+        .width = aiHistoryContentWidth(fb.width, left, rightPanelsWidthForWindow(fb.width)),
+        .cell_h = font.g_titlebar_cell_height,
+    };
+}
+
+fn conversationCenterEnsurePreview(session: *conversation_center_session.Session) void {
+    const allocator = g_allocator orelse return;
+    const id = session.selectedSessionId() orelse {
+        session.setPreviewFromRecord(null);
+        return;
+    };
+    if (session.previewMatchesSelection()) return;
+    g_agent_history_mutex.lock();
+    const record = if (g_agent_history) |store|
+        store.cloneRecordBySessionId(allocator, id) catch null
+    else
+        null;
+    g_agent_history_mutex.unlock();
+    var owned = record;
+    defer if (owned) |*rec| agent_history.freeOwnedRecord(allocator, rec);
+    session.setPreviewFromRecord(owned);
+}
+
+fn conversationCenterLoadRows(session: *conversation_center_session.Session) void {
+    const allocator = g_allocator orelse return;
+    g_agent_history_mutex.lock();
+    const rows = if (g_agent_history) |store|
+        store.buildRows(allocator) catch null
+    else
+        null;
+    const rev = g_agent_history_revision;
+    g_agent_history_mutex.unlock();
+    const owned = rows orelse (allocator.alloc(agent_history.Row, 0) catch return);
+    session.takeRows(owned);
+    session.store_revision = rev;
+    conversationCenterEnsurePreview(session);
+}
+
+fn conversationCenterSyncFromStore(session: *conversation_center_session.Session) void {
+    g_agent_history_mutex.lock();
+    const rev = g_agent_history_revision;
+    g_agent_history_mutex.unlock();
+    if (session.store_revision == rev) {
+        conversationCenterEnsurePreview(session);
+        return;
+    }
+    conversationCenterLoadRows(session);
+}
+
+pub fn conversationCenterMoveSelection(delta: isize) bool {
+    const session = activeConversationCenter() orelse return false;
+    session.moveSelection(delta);
+    conversationCenterEnsurePreview(session);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterCycleFocus(delta: isize) bool {
+    const session = activeConversationCenter() orelse return false;
+    session.cycleFocus(delta);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterMoveFilter(delta: isize) bool {
+    const session = activeConversationCenter() orelse return false;
+    session.moveFilterCursor(delta);
+    conversationCenterEnsurePreview(session);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterScrollDetail(delta: isize) bool {
+    const session = activeConversationCenter() orelse return false;
+    session.scrollDetailBy(delta);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterScrollDates(delta: isize) bool {
+    const session = activeConversationCenter() orelse return false;
+    session.scrollDateList(delta);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterBackspaceQuery() bool {
+    const session = activeConversationCenter() orelse return false;
+    if (!session.backspaceQuery()) return false;
+    conversationCenterEnsurePreview(session);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterInsertCodepoint(codepoint: u21) bool {
+    const session = activeConversationCenter() orelse return false;
+    if (!session.insertQueryCodepoint(codepoint)) return false;
+    conversationCenterEnsurePreview(session);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterReload() bool {
+    const session = activeConversationCenter() orelse return false;
+    session.store_revision = std.math.maxInt(u64);
+    conversationCenterLoadRows(session);
+    markUiDirty();
+    return true;
+}
+
+pub fn resumeConversationCenterSelection() bool {
+    const session = activeConversationCenter() orelse return false;
+    const row = session.selectedRow() orelse return false;
+    if (row.copilot) {
+        loadCopilotConversationById(row.session_id);
+        return true;
+    }
+    return reopenAiChatTabFromHistorySessionId(row.session_id);
+}
+
+pub fn deleteConversationCenterSelection() bool {
+    const session = activeConversationCenter() orelse return false;
+    const row = session.selectedRow() orelse return false;
+    if (!deleteAiChatHistorySessionId(row.session_id)) return false;
+    _ = conversationCenterReload();
+    return true;
+}
+
+pub fn conversationCenterHandleMousePress(xpos: f64, ypos: f64) bool {
+    const args = conversationCenterHitArgs() orelse return false;
+    const hit = conversation_center_renderer.hitTest(
+        args.session,
+        args.height,
+        args.titlebar,
+        args.left,
+        args.width,
+        args.cell_h,
+        xpos,
+        ypos,
+    );
+    switch (hit) {
+        .source => |source| args.session.setSource(source),
+        .all_dates => args.session.setDateFilter(null),
+        .date => |key| args.session.setDateFilter(key),
+        .row => |idx| args.session.selectIndex(idx),
+        .search => args.session.setFocus(.list),
+        .resume_btn => return resumeConversationCenterSelection(),
+        .detail => args.session.setFocus(.detail),
+        .none => return false,
+    }
+    conversationCenterEnsurePreview(args.session);
+    markUiDirty();
+    return true;
+}
+
+pub fn conversationCenterHandleMouseWheel(xpos: i32, ypos: i32, delta: i32) bool {
+    const args = conversationCenterHitArgs() orelse return false;
+    const hit = conversation_center_renderer.hitTest(
+        args.session,
+        args.height,
+        args.titlebar,
+        args.left,
+        args.width,
+        args.cell_h,
+        @floatFromInt(xpos),
+        @floatFromInt(ypos),
+    );
+    const direction: isize = if (delta > 0) -1 else 1;
+    switch (hit) {
+        .detail => args.session.scrollDetailBy(direction * 3),
+        .all_dates, .date, .source => args.session.scrollDateList(direction),
+        .row, .search, .resume_btn, .none => args.session.moveSelection(direction),
+    }
+    conversationCenterEnsurePreview(args.session);
     markUiDirty();
     return true;
 }
@@ -4711,6 +4944,18 @@ pub fn spawnMemoryCenterTab() bool {
     return true;
 }
 
+pub fn spawnConversationCenterTab() bool {
+    const allocator = g_allocator orelse return false;
+    if (!tab.spawnConversationCenterTab(allocator)) return false;
+    if (activeConversationCenter()) |session| {
+        session.store_revision = std.math.maxInt(u64);
+        conversationCenterLoadRows(session);
+    }
+    clearUiStateOnTabChange();
+    markUiDirty();
+    return true;
+}
+
 /// Opens a dedicated Memory Center tab so digest progress stays scoped to it.
 pub fn runMemoryDigestNow() bool {
     const allocator = g_allocator orelse return false;
@@ -5364,6 +5609,8 @@ fn renderResizeFrame(width: i32, height: i32) void {
                 renderAiHistoryFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .memory_center) {
                 renderMemoryCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
+            } else if (active_tab.kind == .conversation_center) {
+                renderConversationCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .skill_center) {
                 renderSkillCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .port_forwarding) {
@@ -8243,7 +8490,7 @@ fn runMainLoop(self: *AppWindow) !void {
             control_api.syncPanes(allocator);
             control_api.syncUiState(allocator);
             syncImeCaretPosition(win, split_count);
-            if (active_tab.kind != .ai_chat and active_tab.kind != .ai_history and active_tab.kind != .memory_center and active_tab.kind != .skill_center and active_tab.kind != .port_forwarding and active_tab.kind != .settings and synchronizedOutputPendingForVisibleSplits(split_count)) {
+            if (active_tab.kind != .ai_chat and active_tab.kind != .ai_history and active_tab.kind != .memory_center and active_tab.kind != .conversation_center and active_tab.kind != .skill_center and active_tab.kind != .port_forwarding and active_tab.kind != .settings and synchronizedOutputPendingForVisibleSplits(split_count)) {
                 // Block instead of spinning at ~1kHz: the IO thread posts a
                 // wakeup when the application ends synchronized output (or new
                 // output arrives), and the timeout bounds the watchdog check.
@@ -8259,6 +8506,8 @@ fn runMainLoop(self: *AppWindow) !void {
                 renderAiHistoryFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .memory_center) {
                 renderMemoryCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
+            } else if (active_tab.kind == .conversation_center) {
+                renderConversationCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .skill_center) {
                 renderSkillCenterFrame(active_tab, fb_width, fb_height, titlebar_offset, left_panels_w, right_panels_w);
             } else if (active_tab.kind == .port_forwarding) {

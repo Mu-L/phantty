@@ -605,6 +605,11 @@ pub fn commandPaletteDeleteSelectedAgentHistory() bool {
     return commandPaletteDeleteAgentHistoryIndex(orig);
 }
 
+pub fn commandPaletteOpenConversationCenter() void {
+    commandPaletteClose();
+    _ = AppWindow.spawnConversationCenterTab();
+}
+
 pub fn commandPaletteLeaveAgentHistory() void {
     if (!commandPaletteIsHistoryMode()) return;
     var state = commandCenterStateSnapshot();
@@ -640,6 +645,10 @@ pub fn commandPaletteExecuteSelected() void {
 
 pub fn commandPaletteExecuteAt(xpos: f64, ypos: f64, window_width: f32, window_height: f32, top_offset: f32) bool {
     if (commandPaletteIsHistoryMode()) {
+        if (commandPaletteHistoryOpenCenterHit(xpos, ypos, window_width, window_height, top_offset)) {
+            commandPaletteOpenConversationCenter();
+            return true;
+        }
         commandPaletteSyncAgentHistoryRows();
         const row_idx = commandPaletteHistoryHitTestIndex(xpos, ypos, window_width, window_height, top_offset) orelse
             return commandPaletteContainsPoint(xpos, ypos, window_width, window_height, top_offset);
@@ -937,6 +946,9 @@ fn executeCommand(action: CommandAction) void {
         .show_integration_prompt => integrationPromptOpen(),
         .open_memory_center => {
             _ = AppWindow.spawnMemoryCenterTab();
+        },
+        .open_conversation_center => {
+            _ = AppWindow.spawnConversationCenterTab();
         },
         .open_skill_center => {
             _ = AppWindow.spawnSkillCenterTab();
@@ -1719,6 +1731,18 @@ fn commandPaletteHitTest(xpos: f64, ypos: f64, window_width: f32, window_height:
     return g_palette_scratch[item_idx];
 }
 
+fn commandPaletteHistoryOpenCenterHit(xpos: f64, ypos: f64, window_width: f32, window_height: f32, top_offset: f32) bool {
+    const layout = commandPaletteLayout(window_width, window_height, top_offset);
+    const x: f32 = @floatCast(xpos);
+    const y: f32 = @floatCast(ypos);
+    if (y < layout.box_top_px or y >= layout.row_top_px) return false;
+    const pad_x: f32 = 16;
+    const chip_w = measureTitlebarText(historySourceLabel(commandPaletteState().history_source));
+    const open_w = measureTitlebarText(i18n.s().cmd_palette_open_conversation_center);
+    const toolbar = command_palette_layout.historyToolbar(layout.box_x, layout.box_w, pad_x, open_w, chip_w, 16);
+    return x >= toolbar.open_x and x <= toolbar.open_x + toolbar.open_w;
+}
+
 fn commandPaletteHistoryHitTestIndex(xpos: f64, ypos: f64, window_width: f32, window_height: f32, top_offset: f32) ?usize {
     const layout = commandPaletteLayout(window_width, window_height, top_offset);
     const x: f32 = @floatCast(xpos);
@@ -2428,8 +2452,12 @@ pub fn renderCommandPalette(window_width: f32, window_height: f32, top_offset: f
     if (commandPaletteIsHistoryMode()) {
         const chip = historySourceLabel(commandPaletteState().history_source);
         const chip_w = measureTitlebarText(chip);
-        renderTitlebarText(chip, layout.box_x + layout.box_w - pad_x - chip_w, filter_text_y, mixColor(fg, accent, 0.20));
-        filter_text_w -= chip_w + 12;
+        const open_label = i18n.s().cmd_palette_open_conversation_center;
+        const open_w = measureTitlebarText(open_label);
+        const toolbar = command_palette_layout.historyToolbar(layout.box_x, layout.box_w, pad_x, open_w, chip_w, 16);
+        renderTitlebarText(open_label, toolbar.open_x, filter_text_y, mixColor(fg, accent, 0.42));
+        renderTitlebarText(chip, toolbar.source_x, filter_text_y, mixColor(fg, accent, 0.20));
+        filter_text_w = toolbar.filter_w;
     }
     const filter = commandPaletteFilter();
     if (filter.len > 0) {
