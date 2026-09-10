@@ -5107,6 +5107,19 @@ pub fn equalizeSplits() void {
     }
 }
 
+/// Flip the focused pane's parent split between left-right and top-bottom.
+/// Returns whether the layout actually changed (false = single pane, so the
+/// caller can let the key fall through). Dirties via
+/// `handleActiveSurfaceChangeWithinTab` rather than new global writes.
+pub fn transposeSplits() bool {
+    const allocator = g_allocator orelse return false;
+    if (!tab.transposeFocusedSplit(allocator)) return false;
+    overlays.resize.g_split_resize_overlay_until = std.time.milliTimestamp() + overlays.RESIZE_OVERLAY_DURATION_MS;
+    requestImmediateLayoutResize();
+    handleActiveSurfaceChangeWithinTab();
+    return true;
+}
+
 /// Swap the contents of two panels (drag source `a`, drop target `b`) within
 /// the active tab. Returns whether a swap happened so the input layer can avoid
 /// redundant work on a no-op. Topology is unchanged, so cached rects only need

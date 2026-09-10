@@ -63,6 +63,7 @@ const STARTUP_SHORTCUT_ENTRIES = [_]StartupShortcut{
     .{ .keys = "Ctrl+1..9", .kind = .pair, .first = .focus_panel_1, .second = .focus_panel_9, .action = "Focus panel 1–9 by number", .action_zh = "按编号聚焦面板 (1–9)" },
     .{ .keys = "Alt+Left / Alt+Right / Alt+Up / Alt+Down", .kind = .quad, .first = .focus_left, .second = .focus_right, .third = .focus_up, .fourth = .focus_down, .action = "Focus panel", .action_zh = "聚焦面板" },
     .{ .keys = "Ctrl+Shift+Z", .kind = .action, .first = .equalize_splits, .action = "Equalize panels", .action_zh = "均分面板" },
+    .{ .keys = "Ctrl+Shift+L", .kind = .action, .first = .transpose_split, .action = "Toggle split layout", .action_zh = "切换分屏方向" },
     .{ .keys = "Ctrl+Shift+W", .kind = .action, .first = .close_panel_or_tab, .action = "Close panel / tab; confirm last", .action_zh = "关闭面板 / 标签页；最后一个需确认" },
     .{ .keys = "Ctrl+Shift+C / Ctrl+V", .kind = .pair, .first = .copy, .second = .paste, .action = "Copy / paste text", .action_zh = "复制 / 粘贴文本" },
     .{ .keys = "Shift-click text", .action = "Select from anchor", .action_zh = "从锚点开始选择" },

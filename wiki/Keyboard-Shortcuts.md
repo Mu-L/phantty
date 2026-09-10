@@ -48,9 +48,10 @@ keybind = global:ctrl+backquote=toggle_quake
 | `Ctrl+Shift+C` | `copy` | Copy the selection |
 | `Ctrl+V` | `paste` | Paste |
 | `Ctrl+Shift+V` | `paste_image` | Paste a clipboard image (into Copilot) |
-| `Alt+←/→/↑/↓` | `focus_left/right/up/down` | Move focus between split panels |
+| `Alt+←/→/↑/↓` | `focus_left/right/up/down` | Move focus between split panels. Yields to a full-screen TUI (Codex `Alt+Up`, Claude Code, vim) so the app keeps the chord; use cycle or `Ctrl+1`–`9` to change panels then |
 | `Ctrl+Shift+[` / `Ctrl+Shift+]` | `focus_previous` / `focus_next` | Cycle panel focus |
 | `Ctrl+Shift+Z` | `equalize_splits` | Reset splits to equal sizes |
+| `Ctrl+Shift+L` | `transpose_split` | Toggle the focused split between left-right and top-bottom |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `next_tab` / `previous_tab` | Switch tabs |
 | `Alt+1` … `Alt+9` | `switch_tab_1` … `switch_tab_9` | Jump to tab N |
 | `Ctrl+1` … `Ctrl+9` | `focus_panel_1` … `focus_panel_9` | Focus split panel N |
@@ -82,7 +83,7 @@ Every app-level action you can bind:
 `close_panel_or_tab`, `toggle_maximize`, `font_size_increase`,
 `font_size_decrease`, `copy`, `paste`, `paste_image`, `focus_left`,
 `focus_right`, `focus_up`, `focus_down`, `focus_previous`, `focus_next`,
-`equalize_splits`, `next_tab`, `previous_tab`, `switch_tab_1` … `switch_tab_9`,
+`equalize_splits`, `transpose_split`, `next_tab`, `previous_tab`, `switch_tab_1` … `switch_tab_9`,
 `focus_panel_1` … `focus_panel_9`, `open_config`.
 
 ## Remapping examples

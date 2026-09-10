@@ -1466,6 +1466,27 @@ pub fn equalizeSplits(allocator: std.mem.Allocator) bool {
     return true;
 }
 
+/// Flip the focused pane's parent split between left-right and top-bottom.
+/// Returns false when there is no such split (single pane / non-terminal tab)
+/// so the caller can let the key fall through.
+pub fn transposeFocusedSplit(allocator: std.mem.Allocator) bool {
+    const t = activeTab() orelse return false;
+    if (t.kind != .terminal) return false;
+
+    const new_tree = (t.tree.transposeParent(allocator, t.focused) catch return false) orelse return false;
+
+    var it = t.tree.surfaces();
+    while (it.next()) |entry| {
+        entry.surface.resize_overlay_active = true;
+        entry.surface.resize_overlay_last_cols = entry.surface.size.grid.cols;
+        entry.surface.resize_overlay_last_rows = entry.surface.size.grid.rows;
+    }
+
+    t.tree.deinit();
+    t.tree = new_tree;
+    return true;
+}
+
 /// Swap the panels at handles `a` (drag source) and `b` (drop target). The two
 /// leaves exchange their surfaces; the split-tree topology and ratios are
 /// unchanged. Focus follows the dragged surface to the target slot.

@@ -80,6 +80,7 @@ pub const Action = enum {
     focus_previous,
     focus_next,
     equalize_splits,
+    transpose_split,
     next_tab,
     previous_tab,
     switch_tab_1,
@@ -446,6 +447,7 @@ pub const default_bindings = [_]Binding{
     .{ .trigger = .{ .mods = .{ .ctrl = true, .shift = true }, .key_code = Key.bracket_left }, .action = .focus_previous },
     .{ .trigger = .{ .mods = .{ .ctrl = true, .shift = true }, .key_code = Key.bracket_right }, .action = .focus_next },
     .{ .trigger = .{ .mods = .{ .ctrl = true, .shift = true }, .key_code = 'Z' }, .action = .equalize_splits },
+    .{ .trigger = .{ .mods = .{ .ctrl = true, .shift = true }, .key_code = 'L' }, .action = .transpose_split },
     .{ .trigger = .{ .mods = .{ .ctrl = true }, .key_code = Key.tab }, .action = .next_tab },
     .{ .trigger = .{ .mods = .{ .ctrl = true, .shift = true }, .key_code = Key.tab }, .action = .previous_tab },
     .{ .trigger = .{ .mods = .{ .alt = true }, .key_code = '1' }, .action = .switch_tab_1 },
@@ -621,6 +623,14 @@ test "split right/down use Windows-Terminal-style Ctrl+Shift +/- bindings" {
     const font_mods: Mods = if (is_macos) .{ .win = true } else .{ .ctrl = true };
     try std.testing.expectEqual(Action.font_size_increase, set.lookupApp(.{ .mods = font_mods, .key_code = Key.plus }).?);
     try std.testing.expectEqual(Action.font_size_decrease, set.lookupApp(.{ .mods = font_mods, .key_code = Key.minus }).?);
+}
+
+test "transpose_split defaults to Ctrl+Shift+L (Cmd+Shift+L on macOS)" {
+    const set = Set.defaults();
+    const is_macos = builtin.target.os.tag == .macos;
+    const mods: Mods = if (is_macos) .{ .win = true, .shift = true } else .{ .ctrl = true, .shift = true };
+    try std.testing.expectEqual(Action.transpose_split, set.lookupApp(.{ .mods = mods, .key_code = 'L' }).?);
+    try std.testing.expectEqual(Action.transpose_split, Action.parse("transpose_split").?);
 }
 
 test "keybind parses displayed plus shortcut spelling" {

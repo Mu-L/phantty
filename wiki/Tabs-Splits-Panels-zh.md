@@ -25,8 +25,9 @@
 ## 创建与切换分屏
 
 - **分屏当前面板：** `Ctrl+Shift++` 向右分屏（`split_right`），`Ctrl+Shift+-` 向下分屏（`split_down`），与 Windows Terminal 一致。
-- **在面板间移动焦点：** `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓`。
+- **在面板间移动焦点：** `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓`。全屏 TUI（Codex 的 `Alt+Up` 回答排队问题、Claude Code、vim）运行时把该组合交给程序；那时用循环切换或 `Ctrl+1`–`9` 换面板。
 - **循环切换焦点：** `Ctrl+Shift+[`（上一个）与 `Ctrl+Shift+]`（下一个）。
+- **切换分屏方向：** `Ctrl+Shift+L`（`transpose_split`）把当前分屏在左右布局和上下布局之间切换。
 - **均分大小：** `Ctrl+Shift+Z`（`equalize_splits`）把该标签内所有分屏重置为等比。
 - **最大化当前面板：** `Alt+Enter`（`toggle_maximize`）把它放大铺满整个标签，再按一次还原。
 

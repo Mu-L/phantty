@@ -3143,19 +3143,30 @@ fn executeCommand(cmd: command_dispatch.Command) bool {
         // the requested direction, don't consume the key so it falls
         // through to the terminal (e.g. Alt+Up reaches a TUI like Claude
         // Code as \x1b[1;3A when running in a single pane).
-        .focus_split => |target| return switch (target) {
-            .left => AppWindow.gotoSplit(.{ .spatial = .left }),
-            .right => AppWindow.gotoSplit(.{ .spatial = .right }),
-            .up => AppWindow.gotoSplit(.{ .spatial = .up }),
-            .down => AppWindow.gotoSplit(.{ .spatial = .down }),
-            .previous => AppWindow.gotoSplit(.previous_wrapped),
-            .next => AppWindow.gotoSplit(.next_wrapped),
+        // Spatial chords also yield while the focused surface is on the
+        // alternate screen, even if a neighbor pane exists — otherwise
+        // Codex/Claude Code lose Alt+Up whenever a split sits above them.
+        // Cycle (Ctrl+Shift+[ ]) and numeric panel focus stay host-owned.
+        .focus_split => |target| {
+            if (command_dispatch.yieldSpatialFocusToTerminal(
+                target,
+                AppWindow.activeSurfaceHasRunningProgram(),
+            )) return false;
+            return switch (target) {
+                .left => AppWindow.gotoSplit(.{ .spatial = .left }),
+                .right => AppWindow.gotoSplit(.{ .spatial = .right }),
+                .up => AppWindow.gotoSplit(.{ .spatial = .up }),
+                .down => AppWindow.gotoSplit(.{ .spatial = .down }),
+                .previous => AppWindow.gotoSplit(.previous_wrapped),
+                .next => AppWindow.gotoSplit(.next_wrapped),
+            };
         },
         // Numeric panel focus: like focus_split, "performable" — if there is no
         // panel at that index (single-panel tab, or index past the panel count),
         // don't consume the key so it falls through to the terminal.
         .focus_panel => |n| return AppWindow.focusPanel(n),
         .equalize_splits => AppWindow.equalizeSplits(),
+        .transpose_split => return AppWindow.transposeSplits(),
         .next_tab => AppWindow.switchTab((active_tab_state.g_active_tab + 1) % tab.g_tab_count),
         .previous_tab => {
             if (active_tab_state.g_active_tab > 0) AppWindow.switchTab(active_tab_state.g_active_tab - 1) else AppWindow.switchTab(tab.g_tab_count - 1);
