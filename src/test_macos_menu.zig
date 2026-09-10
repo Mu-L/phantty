@@ -235,6 +235,7 @@ test "menu_macos: action item modifiers track keybind.Set.defaults (Ctrl→Cmd d
         .{ .title = "Open Command Center", .action = .toggle_command_palette },
         .{ .title = "Increase Font Size", .action = .font_size_increase },
         .{ .title = "Equalize Splits", .action = .equalize_splits },
+        .{ .title = "Toggle Split Layout", .action = .transpose_split },
         // Ctrl is intentionally retained for tab switching.
         .{ .title = "Next Tab", .action = .next_tab },
         .{ .title = "Previous Tab", .action = .previous_tab },

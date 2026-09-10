@@ -196,11 +196,12 @@ sessions hide the readout.
 | Copy selection (right-click) | Right-click a selection | Right-click a selection |
 | Paste text | **Ctrl+V**; **Ctrl+Shift+V** also pastes text when the clipboard has no image | **Cmd+V**; **Cmd+Shift+V** also pastes text when the clipboard has no image |
 | Paste clipboard image | **Ctrl+Shift+V** | **Cmd+Shift+V** |
-| Move focus to adjacent panel | **Alt** + arrow keys | **Opt** + arrow keys |
+| Move focus to adjacent panel | **Alt** + arrow keys (passed through to full-screen apps) | **Opt** + arrow keys (passed through to full-screen apps) |
 | Focus panel 1–9 by number | **Ctrl+1**–**9** | **Cmd+1**–**9** |
 | Focus previous panel (cycle) | **Ctrl+Shift+[** | **Cmd+Shift+[** |
 | Focus next panel (cycle) | **Ctrl+Shift+]** | **Cmd+Shift+]** |
 | Equalize split sizes | **Ctrl+Shift+Z** | **Cmd+Shift+Z** |
+| Toggle split layout (left-right ↔ top-bottom) | **Ctrl+Shift+L** | **Cmd+Shift+L** |
 | Next tab | **Ctrl+Tab** | **Ctrl+Tab** |
 | Previous tab | **Ctrl+Shift+Tab** | **Ctrl+Shift+Tab** |
 | Switch to tab 1–9 | **Alt+1**–**9** | **Opt+1**–**9** |

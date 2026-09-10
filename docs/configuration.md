@@ -215,7 +215,7 @@ Current app-level actions include `toggle_command_palette`, `toggle_quake`,
 `toggle_sidebar`, `toggle_ai_copilot`, `close_panel_or_tab`, `toggle_maximize`,
 `font_size_increase`, `font_size_decrease`, `copy`, `paste`, `paste_image`,
 `focus_left`, `focus_right`, `focus_up`, `focus_down`, `focus_previous`,
-`focus_next`, `equalize_splits`, `next_tab`, `previous_tab`, `switch_tab_1`
+`focus_next`, `equalize_splits`, `transpose_split`, `next_tab`, `previous_tab`, `switch_tab_1`
 through `switch_tab_9`, `focus_panel_1` through `focus_panel_9`, and
 `open_config`.
 

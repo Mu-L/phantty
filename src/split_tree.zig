@@ -799,6 +799,53 @@ pub fn equalize(
     };
 }
 
+/// Immediate parent split of `child`, or null if `child` is the root / missing.
+/// Used to toggle left-right ↔ top-bottom for the split that contains the
+/// focused pane (Ghostty discussion #11600 proposed `transpose_split`; we
+/// flip only this parent so a nested pair rotates without reshaping siblings).
+pub fn parentOf(self: *const SplitTree, child: Node.Handle) ?Node.Handle {
+    if (self.isEmpty()) return null;
+    for (self.nodes, 0..) |node, i| {
+        switch (node) {
+            .split => |s| {
+                if (s.left == child or s.right == child)
+                    return @enumFromInt(@as(Node.Handle.Backing, @intCast(i)));
+            },
+            .leaf => {},
+        }
+    }
+    return null;
+}
+
+/// Flip one split node between `.horizontal` (left-right) and `.vertical`
+/// (top-bottom) in place. `at` MUST be a split (asserted). Same constCast
+/// escape hatch as `resizeInPlace`.
+pub fn flipSplitLayoutInPlace(self: *SplitTree, at: Node.Handle) void {
+    assert(at.idx() < self.nodes.len);
+    switch (self.nodes[at.idx()]) {
+        .split => {},
+        .leaf => unreachable,
+    }
+    const s: *Split = @constCast(&self.nodes[at.idx()].split);
+    s.layout = switch (s.layout) {
+        .horizontal => .vertical,
+        .vertical => .horizontal,
+    };
+}
+
+/// Clone the tree and flip the parent split of `at`. Returns null when `at`
+/// has no parent (single pane), so the caller can leave the key unconsumed.
+pub fn transposeParent(
+    self: *const SplitTree,
+    gpa: Allocator,
+    at: Node.Handle,
+) Allocator.Error!?SplitTree {
+    const parent = self.parentOf(at) orelse return null;
+    var result = try self.clone(gpa);
+    result.flipSplitLayoutInPlace(parent);
+    return result;
+}
+
 fn weight(
     self: *const SplitTree,
     from: Node.Handle,
@@ -1711,6 +1758,94 @@ test "SplitTree: swapLeaves exchanges leaf surfaces and preserves topology" {
     tree.swapLeaves(a, b);
     try std.testing.expectEqual(surf_a, tree.nodes[1].leaf.terminal);
     try std.testing.expectEqual(surf_b, tree.nodes[2].leaf.terminal);
+}
+
+test "SplitTree: parentOf finds the immediate split; root has none" {
+    const session_persist = @import("session_persist.zig");
+
+    var leaf_a = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var leaf_b = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var leaf_c = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var inner = session_persist.NodeSnap{ .split = .{ .layout = .vertical, .ratio = 0.4, .left = &leaf_a, .right = &leaf_b } };
+    var root = session_persist.NodeSnap{ .split = .{ .layout = .horizontal, .ratio = 0.6, .left = &inner, .right = &leaf_c } };
+
+    const Stub = struct {
+        var counter: usize = 0;
+        var sentinels: [16]usize = undefined;
+        fn make(_: *const session_persist.SurfaceSnap, _: Allocator) ?*Surface {
+            const ptr = &sentinels[counter];
+            counter += 1;
+            return @ptrCast(@alignCast(ptr));
+        }
+    };
+    Stub.counter = 0;
+
+    var tree = try fromSnapshot(std.testing.allocator, &root, Stub.make);
+    defer {
+        if (tree.nodes.len > 0) tree.arena.deinit();
+        tree = undefined;
+    }
+
+    // Pre-order: root@0 (H), inner@1 (V), a@2, b@3, c@4.
+    const root_h: Node.Handle = @enumFromInt(0);
+    const inner_h: Node.Handle = @enumFromInt(1);
+    const a: Node.Handle = @enumFromInt(2);
+    const b: Node.Handle = @enumFromInt(3);
+    const c: Node.Handle = @enumFromInt(4);
+
+    try std.testing.expectEqual(@as(?Node.Handle, null), tree.parentOf(root_h));
+    try std.testing.expectEqual(root_h, tree.parentOf(inner_h).?);
+    try std.testing.expectEqual(inner_h, tree.parentOf(a).?);
+    try std.testing.expectEqual(inner_h, tree.parentOf(b).?);
+    try std.testing.expectEqual(root_h, tree.parentOf(c).?);
+}
+
+test "SplitTree: flipSplitLayoutInPlace toggles only the targeted split" {
+    const session_persist = @import("session_persist.zig");
+
+    var leaf_a = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var leaf_b = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var leaf_c = session_persist.NodeSnap{ .leaf = .{ .surface = .{ .local_shell = .{} } } };
+    var inner = session_persist.NodeSnap{ .split = .{ .layout = .vertical, .ratio = 0.4, .left = &leaf_a, .right = &leaf_b } };
+    var root = session_persist.NodeSnap{ .split = .{ .layout = .horizontal, .ratio = 0.6, .left = &inner, .right = &leaf_c } };
+
+    const Stub = struct {
+        var counter: usize = 0;
+        var sentinels: [16]usize = undefined;
+        fn make(_: *const session_persist.SurfaceSnap, _: Allocator) ?*Surface {
+            const ptr = &sentinels[counter];
+            counter += 1;
+            return @ptrCast(@alignCast(ptr));
+        }
+    };
+    Stub.counter = 0;
+
+    var tree = try fromSnapshot(std.testing.allocator, &root, Stub.make);
+    defer {
+        if (tree.nodes.len > 0) tree.arena.deinit();
+        tree = undefined;
+    }
+
+    const inner_h: Node.Handle = @enumFromInt(1);
+    const a: Node.Handle = @enumFromInt(2);
+    const ratio_before = tree.nodes[1].split.ratio;
+    const left_before = tree.nodes[1].split.left;
+    const right_before = tree.nodes[1].split.right;
+
+    try std.testing.expectEqual(Split.Layout.vertical, tree.nodes[1].split.layout);
+    try std.testing.expectEqual(Split.Layout.horizontal, tree.nodes[0].split.layout);
+
+    tree.flipSplitLayoutInPlace(tree.parentOf(a).?);
+
+    // Inner pair A/B becomes left-right; the outer A|B vs C split is untouched.
+    try std.testing.expectEqual(Split.Layout.horizontal, tree.nodes[inner_h.idx()].split.layout);
+    try std.testing.expectEqual(Split.Layout.horizontal, tree.nodes[0].split.layout);
+    try std.testing.expectEqual(ratio_before, tree.nodes[inner_h.idx()].split.ratio);
+    try std.testing.expectEqual(left_before, tree.nodes[inner_h.idx()].split.left);
+    try std.testing.expectEqual(right_before, tree.nodes[inner_h.idx()].split.right);
+
+    tree.flipSplitLayoutInPlace(inner_h);
+    try std.testing.expectEqual(Split.Layout.vertical, tree.nodes[inner_h.idx()].split.layout);
 }
 
 test "sortReadingOrder orders panels top-left to bottom-right" {

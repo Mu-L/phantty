@@ -34,7 +34,13 @@ terminals together.
   The command center also offers `Split Right`, `Split Down`, `Split Left`, and
   `Split Up`.
 - **Move focus between panels:** `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓`
-  (`focus_left` / `focus_right` / `focus_up` / `focus_down`).
+  (`focus_left` / `focus_right` / `focus_up` / `focus_down`). These chords are
+  *performable*: with no pane in that direction they go to the terminal. They
+  also yield while the focused terminal is in a full-screen app (alternate
+  screen), so Codex `Alt+Up` (queued question), Claude Code, and vim keep
+  those keys. Ghostty Linux uses `Ctrl+Alt+arrows` for the same reason; rebind
+  `focus_up` etc. to that chord if you want host panel-focus during a TUI.
+  Cycle and numeric focus below stay host-owned.
 - **Cycle focus:** `Ctrl+Shift+[` (`focus_previous`) and `Ctrl+Shift+]`
   (`focus_next`).
 - **Focus a panel by number:** `Ctrl+1` … `Ctrl+9` (`focus_panel_1` …
@@ -42,6 +48,13 @@ terminals together.
   top-left to bottom-right). When there is no panel at that index the key falls
   through to the terminal, so apps that use `Ctrl+<digit>` keep working when you
   are not split.
+- **Toggle split layout:** `Ctrl+Shift+L` (`transpose_split`) flips the focused
+  pane's parent split between left-right and top-bottom. Two side-by-side panes
+  become stacked (and the reverse); a nested pair rotates without reshaping its
+  siblings. Ghostty does not ship this yet (discussion
+  [#11600](https://github.com/ghostty-org/ghostty/discussions/11600) proposed
+  flipping every split in the tree); WispTerm flips only the parent of the
+  focused pane. With a single pane the chord is not consumed.
 - **Equalize panel sizes:** `Ctrl+Shift+Z` (`equalize_splits`) resets all splits
   in the tab to equal proportions.
 - **Maximize the focused panel:** `Alt+Enter` (`toggle_maximize`) zooms it to fill

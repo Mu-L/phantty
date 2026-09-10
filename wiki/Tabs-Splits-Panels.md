@@ -30,8 +30,10 @@ unrelated work apart, and splits to see related terminals side by side.
 
 - **Split the current panel:** `Ctrl+Shift++` splits to the right (`split_right`)
   and `Ctrl+Shift+-` splits downward (`split_down`), mirroring Windows Terminal.
-- **Move focus between panels:** `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓`.
+- **Move focus between panels:** `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓`. These yield to a full-screen TUI (Codex `Alt+Up`, Claude Code, vim) so the app keeps the chord; use cycle or `Ctrl+1`–`9` to change panels then.
 - **Cycle focus:** `Ctrl+Shift+[` (previous) and `Ctrl+Shift+]` (next).
+- **Toggle split layout:** `Ctrl+Shift+L` (`transpose_split`) flips the focused
+  split between left-right and top-bottom.
 - **Equalize sizes:** `Ctrl+Shift+Z` (`equalize_splits`) resets all splits in
   the tab to equal proportions.
 - **Maximize the focused panel:** `Alt+Enter` (`toggle_maximize`) zooms it to

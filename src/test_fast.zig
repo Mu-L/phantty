@@ -71,6 +71,25 @@ test "AI History action transcript loader reuses ready preview before target sna
     try std.testing.expect(unlock < target_snapshot);
 }
 
+test "input transposes the focused split via AppWindow.transposeSplits" {
+    const source = @embedFile("input.zig");
+    const arm = std.mem.indexOf(u8, source, ".transpose_split => return AppWindow.transposeSplits()") orelse
+        return error.MissingTransposeSplitArm;
+    _ = arm;
+}
+
+test "input yields spatial panel focus to alt-screen TUIs" {
+    const source = @embedFile("input.zig");
+    const focus_arm = std.mem.indexOf(u8, source, ".focus_split => |target|") orelse
+        return error.MissingFocusSplitArm;
+    const rest = source[focus_arm..];
+    const yield_at = std.mem.indexOf(u8, rest, "yieldSpatialFocusToTerminal") orelse
+        return error.MissingSpatialFocusYield;
+    const alt_at = std.mem.indexOf(u8, rest, "activeSurfaceHasRunningProgram()") orelse
+        return error.MissingAltScreenCheck;
+    try std.testing.expect(yield_at < alt_at);
+}
+
 test "assistant conversation input routing owns keyboard target lookup" {
     const routing_source = @embedFile("input/assistant_conversation.zig");
     try std.testing.expect(std.mem.indexOf(u8, routing_source, "activeAiChat()") != null);

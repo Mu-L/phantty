@@ -143,6 +143,7 @@ fn buildDefaultMenu() void {
     wispterm_macos_menu_add_item("Previous Tab", id(.previous_tab), "\t", ModCtrl | ModShift);
     wispterm_macos_menu_add_separator();
     wispterm_macos_menu_add_item("Equalize Splits", id(.equalize_splits), "z", AppMod | ModShift);
+    wispterm_macos_menu_add_item("Toggle Split Layout", id(.transpose_split), "l", AppMod | ModShift);
     wispterm_macos_menu_end_submenu();
 
     wispterm_macos_menu_finalize();

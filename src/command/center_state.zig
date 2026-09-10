@@ -20,6 +20,7 @@ pub const CommandAction = enum {
     focus_previous,
     focus_next,
     equalize_splits,
+    transpose_split,
     close_split_or_tab,
     toggle_sidebar,
     toggle_file_explorer,
@@ -87,6 +88,7 @@ pub const command_entries = [_]CommandEntry{
     .{ .title = "Split Up", .detail = "Create a panel above", .shortcut = "", .action = .split_up },
     // Previous/Next Panel removed from the palette (declutter); the Shift+Cmd+[ / ]
     // keybinds in keybind.zig still work — focus_previous/focus_next stay in the enum.
+    .{ .title = "Toggle Split Layout", .detail = "Switch the focused split between left-right and top-bottom", .shortcut = "", .action = .transpose_split },
     .{ .title = "Equalize Panels", .detail = "Reset split sizes in the current tab", .shortcut = "", .action = .equalize_splits },
     .{ .title = "Close Panel / Tab", .detail = "Close focused panel or tab; press again for the last panel", .shortcut = "", .action = .close_split_or_tab },
     .{ .title = "Toggle Sidebar", .detail = "Show or hide the tab sidebar", .shortcut = "", .action = .toggle_sidebar },
@@ -392,6 +394,10 @@ test "command center includes update check actions" {
 
 test "command center includes What's New action" {
     try expectCommandEntry("What's New", .show_whats_new);
+}
+
+test "command center includes Toggle Split Layout action" {
+    try expectCommandEntry("Toggle Split Layout", .transpose_split);
 }
 
 test "command center includes Skill Center action" {

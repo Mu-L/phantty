@@ -14,6 +14,22 @@ pub const Phase = enum { early, late };
 /// previous/next ordering.
 pub const FocusTarget = enum { left, right, up, down, previous, next };
 
+/// Spatial panel-focus chords (Alt+arrows → `focus_left/right/up/down`) should
+/// fall through to the PTY when the focused surface is on the alternate screen.
+///
+/// Full-screen TUIs bind those keys — Codex uses Alt+Up to answer a queued
+/// question, Claude Code similarly — and Ghostty's Linux default uses
+/// Ctrl+Alt+arrows for split navigation for the same reason. Cycle
+/// (`focus_previous` / `focus_next`) and numeric panel focus stay host-owned
+/// so there is still a way to leave the TUI pane.
+pub fn yieldSpatialFocusToTerminal(target: FocusTarget, alt_screen: bool) bool {
+    if (!alt_screen) return false;
+    return switch (target) {
+        .left, .right, .up, .down => true,
+        .previous, .next => false,
+    };
+}
+
 pub const Command = union(enum) {
     // Early commands (input.zig commits any active tab rename before executing).
     toggle_quake,
@@ -37,6 +53,7 @@ pub const Command = union(enum) {
     send_to_copilot,
     focus_split: FocusTarget,
     equalize_splits,
+    transpose_split,
     next_tab,
     previous_tab,
     open_config,
@@ -78,6 +95,7 @@ pub fn resolve(action: keybind.Action, phase: Phase) ?Command {
             .focus_previous => .{ .focus_split = .previous },
             .focus_next => .{ .focus_split = .next },
             .equalize_splits => .equalize_splits,
+            .transpose_split => .transpose_split,
             .next_tab => .next_tab,
             .previous_tab => .previous_tab,
             .open_config => .open_config,
@@ -146,6 +164,12 @@ test "late commands resolve only in the late phase" {
     try std.testing.expectEqual(@as(?Command, null), resolve(.copy, .early));
 }
 
+test "transpose_split resolves in the late phase like equalize" {
+    try std.testing.expectEqual(Command.transpose_split, resolve(.transpose_split, .late).?);
+    try std.testing.expectEqual(@as(?Command, null), resolve(.transpose_split, .early));
+    try std.testing.expectEqual(Command.equalize_splits, resolve(.equalize_splits, .late).?);
+}
+
 test "visual settings resolves before overlay routing" {
     try std.testing.expectEqual(Command.open_settings, resolve(.open_settings, .early).?);
     try std.testing.expectEqual(@as(?Command, null), resolve(.open_settings, .late));
@@ -156,6 +180,17 @@ test "focus actions map to focus_split targets" {
     try std.testing.expectEqual(Command{ .focus_split = .previous }, resolve(.focus_previous, .late).?);
     try std.testing.expectEqual(Command{ .focus_split = .next }, resolve(.focus_next, .late).?);
     try std.testing.expectEqual(@as(?Command, null), resolve(.focus_left, .early));
+}
+
+test "spatial focus yields to an alt-screen TUI; cycle and normal-screen do not" {
+    try std.testing.expect(yieldSpatialFocusToTerminal(.up, true));
+    try std.testing.expect(yieldSpatialFocusToTerminal(.down, true));
+    try std.testing.expect(yieldSpatialFocusToTerminal(.left, true));
+    try std.testing.expect(yieldSpatialFocusToTerminal(.right, true));
+    try std.testing.expect(!yieldSpatialFocusToTerminal(.previous, true));
+    try std.testing.expect(!yieldSpatialFocusToTerminal(.next, true));
+    try std.testing.expect(!yieldSpatialFocusToTerminal(.up, false));
+    try std.testing.expect(!yieldSpatialFocusToTerminal(.left, false));
 }
 
 test "switch_tab_N maps to a zero-based index" {

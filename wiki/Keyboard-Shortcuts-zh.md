@@ -47,9 +47,10 @@ keybind = global:ctrl+backquote=toggle_quake
 | `Ctrl+Shift+C` | `copy` | 复制选区 |
 | `Ctrl+V` | `paste` | 粘贴 |
 | `Ctrl+Shift+V` | `paste_image` | 粘贴剪贴板图片（到 Copilot） |
-| `Alt+←/→/↑/↓` | `focus_left/right/up/down` | 在分屏面板间移动焦点 |
+| `Alt+←/→/↑/↓` | `focus_left/right/up/down` | 在分屏面板间移动焦点。全屏 TUI（Codex 的 `Alt+Up` 回答排队问题、Claude Code、vim）运行时把该组合交给程序；那时用循环切换或 `Ctrl+1`–`9` 换面板 |
 | `Ctrl+Shift+[` / `Ctrl+Shift+]` | `focus_previous` / `focus_next` | 循环切换面板焦点 |
 | `Ctrl+Shift+Z` | `equalize_splits` | 把分屏重置为等比 |
+| `Ctrl+Shift+L` | `transpose_split` | 把当前分屏在左右布局和上下布局之间切换 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `next_tab` / `previous_tab` | 切换标签 |
 | `Alt+1` … `Alt+9` | `switch_tab_1` … `switch_tab_9` | 跳到第 N 个标签 |
 | `Ctrl+1` … `Ctrl+9` | `focus_panel_1` … `focus_panel_9` | 聚焦第 N 个分屏面板 |
@@ -77,7 +78,7 @@ keybind = global:ctrl+backquote=toggle_quake
 `close_panel_or_tab`、`toggle_maximize`、`font_size_increase`、
 `font_size_decrease`、`copy`、`paste`、`paste_image`、`focus_left`、
 `focus_right`、`focus_up`、`focus_down`、`focus_previous`、`focus_next`、
-`equalize_splits`、`next_tab`、`previous_tab`、`switch_tab_1` … `switch_tab_9`、
+`equalize_splits`、`transpose_split`、`next_tab`、`previous_tab`、`switch_tab_1` … `switch_tab_9`、
 `focus_panel_1` … `focus_panel_9`、`open_config`。
 
 ## 重映射示例
