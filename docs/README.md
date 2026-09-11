@@ -5,6 +5,7 @@ This folder is the source for the WispTerm GitHub Pages site.
 ## Files
 
 - `index.html` — landing page (hero, features, install, config, shortcuts).
+- `tutorial.zh.html` / `tutorial.css` — Chinese step-by-step guide to AI setup, SSH, conversations, memory, forwarding, files, skills, and workspace basics.
 - `ai.html` / `ai.zh.html` — DeepSeek-first Copilot workflow pages.
 - `use-cases.html` / `use-cases.zh.html` — practical Copilot use cases such as SSH profile setup.
 - `themes.html` — built-in theme gallery.

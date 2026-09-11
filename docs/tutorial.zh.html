@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WispTerm 使用教程 — 从第一次连接到日常工作</title>
+  <meta name="description" content="WispTerm 中文上手教程：配置模型 API、登录 SSH 服务器、使用 Copilot 与对话中心、管理长期记忆和摘要、设置端口转发，以及文件预览、技能和日常终端操作。">
+  <meta property="og:title" content="WispTerm 中文使用教程">
+  <meta property="og:description" content="一步步配置 AI、连接服务器、找回对话、管理记忆，让终端成为日常工作台。">
+  <meta property="og:image" content="assets/wispterm.png">
+  <meta property="og:type" content="article">
+  <meta name="theme-color" content="#1b1e28">
+  <link rel="icon" href="assets/favicon.ico">
+  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="tutorial.css?v=1">
+</head>
+<body class="tutorial-page">
+  <a class="skip-link" href="#guide-content">跳到教程正文</a>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="./zh.html"><img src="assets/wispterm.png" alt="" width="28" height="28"><span>WispTerm</span></a>
+      <nav class="nav-links" aria-label="网站导航">
+        <a href="./zh.html">首页</a>
+        <a class="tutorial-link active-link" href="./tutorial.zh.html" aria-current="page">教程</a>
+        <a href="./ai.zh.html">AI</a>
+        <a href="./use-cases.zh.html">案例</a>
+        <a href="./themes.html">主题</a>
+        <a class="github" href="https://github.com/xuzhougeng/wispterm">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container guide-layout">
+    <aside class="guide-sidebar" aria-label="教程目录">
+      <p class="guide-nav-title">使用教程 <span>中文</span></p>
+      <nav aria-label="章节导航">
+        <a href="#start"><span>01</span>认识工作台</a>
+        <a href="#api"><span>02</span>配置模型 API</a>
+        <a href="#ssh"><span>03</span>登录服务器</a>
+        <a href="#copilot"><span>04</span>与 Copilot 协作</a>
+        <a href="#conversations"><span>05</span>对话中心</a>
+        <a href="#memory"><span>06</span>记忆中心</a>
+        <a href="#ports"><span>07</span>端口转发</a>
+        <a href="#files"><span>08</span>文件与预览</a>
+        <a href="#skills"><span>09</span>技能与工具</a>
+        <a href="#workspace"><span>10</span>整理工作环境</a>
+        <a href="#help"><span>11</span>常见问题</a>
+      </nav>
+      <a class="guide-download" href="./zh.html#install">下载与安装 <span aria-hidden="true">↗</span></a>
+    </aside>
+
+    <main id="guide-content" class="guide-content">
+      <header class="guide-intro">
+        <p class="eyebrow">WISPTERM / 使用指南</p>
+        <h1>从第一次连接，<br>到每天的工作。</h1>
+        <p class="guide-lead">在一个终端里连接服务器、使用 AI、找回对话和积累记忆。按顺序完成首次配置，也可以从左侧目录直接找到需要的功能。</p>
+        <div class="guide-routes" aria-label="推荐阅读路线">
+          <a href="#api"><strong>先用 AI</strong><span>配置 API → 开始对话 → 保存记忆</span></a>
+          <a href="#ssh"><strong>先连服务器</strong><span>SSH 登录 → 端口转发 → 查看文件</span></a>
+        </div>
+      </header>
+
+      <section id="start" class="guide-section">
+        <p class="guide-number">01 / 入门</p>
+        <h2>先认识三个常用入口</h2>
+        <p>安装并打开 WispTerm 后，可以直接使用本地终端。SSH 登录、标签页、分屏和文件浏览不需要模型 API；使用内置 Copilot 时再配置 AI。</p>
+        <dl class="guide-definitions">
+          <div><dt>命令中心</dt><dd><kbd>Ctrl+Shift+P</kbd> 打开，输入功能名称筛选，再按 <kbd>Enter</kbd> 执行。记忆中心、对话中心、端口转发和设置都从这里进入。</dd></div>
+          <div><dt>新建会话</dt><dd>点击标签栏的 <strong>＋</strong> 或按 <kbd>Ctrl+Shift+T</kbd>，选择本地 Shell、WSL、SSH、副驾或历史会话。</dd></div>
+          <div><dt>终端旁的 Copilot</dt><dd>在终端标签页按 <kbd>Ctrl+Shift+A</kbd>，打开与当前终端关联的 AI 侧栏，一边查看输出，一边提问。</dd></div>
+        </dl>
+        <div class="guide-note">下文快捷键以 Windows 为例。macOS 通常将 <kbd>Ctrl</kbd> 换为 <kbd>Cmd</kbd>、<kbd>Alt</kbd> 换为 <kbd>Opt</kbd>；切换标签页仍使用 <kbd>Ctrl+Tab</kbd>。自定义过快捷键时，以自己的配置为准。</div>
+      </section>
+
+      <section id="api" class="guide-section">
+        <p class="guide-number">02 / 首次配置</p>
+        <h2>配置模型 API</h2>
+        <p>AI 配置把服务地址、密钥和模型保存成一个可重复使用的组合。你可以保存多个配置，在对话中切换。</p>
+        <h3>最快的方式：配置 DeepSeek</h3>
+        <ol class="guide-steps">
+          <li>前往 <a href="https://platform.deepseek.com">DeepSeek 开放平台</a>创建 API Key，并确认账号有可用额度。</li>
+          <li>打开命令中心，选择<strong>设置：快速配置 AI</strong>（Settings: Quick Configure AI）。</li>
+          <li>粘贴密钥并选择<strong>校验并保存</strong>。验证成功后，WispTerm 会保存 DeepSeek 主模型和 Flash 子代理配置。</li>
+          <li>打开<strong>新建会话 → 副驾（Copilot）</strong>，发送“你好，请介绍一下你能帮我完成哪些终端任务”。能收到回复就表示基本连接成功。</li>
+        </ol>
+        <h3>使用其他服务或自定义模型</h3>
+        <p>在命令中心选择<strong>管理 AI 配置</strong>（Manage AI Profiles），或进入<strong>设置 → AI 配置</strong>，新建或编辑配置。</p>
+        <div class="guide-table" role="region" aria-label="AI 配置字段" tabindex="0"><table>
+          <thead><tr><th scope="col">字段</th><th scope="col">怎么填</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">名称 / Name</th><td>便于区分的名字，例如“日常助手”或“代码助手”。</td></tr>
+            <tr><th scope="row">Base URL</th><td>服务商提供的 API 基础地址，不是网页版聊天地址。DeepSeek 示例：<code>https://api.deepseek.com</code>。</td></tr>
+            <tr><th scope="row">API Key</th><td>该服务的密钥。只填在应用的配置表单里，不要发到对话或截图中。</td></tr>
+            <tr><th scope="row">Model</th><td>服务商实际提供、且你的账号有权限调用的模型 ID，不是自定义昵称。</td></tr>
+            <tr><th scope="row">Protocol</th><td>按服务商文档选择协议，见下表。地址相似不代表协议相同。</td></tr>
+            <tr><th scope="row">System / Agent</th><td>System 留空可使用内置提示词；需要执行命令、读写文件等工具时启用 Agent。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="guide-table" role="region" aria-label="模型协议选择" tabindex="0"><table>
+          <thead><tr><th scope="col">服务接口</th><th scope="col">Protocol</th><th scope="col">填写提示</th></tr></thead>
+          <tbody>
+            <tr><td>OpenAI 兼容聊天接口</td><td><code>chat_completions</code></td><td>DeepSeek 等服务使用此方式；Base URL 按服务商要求填写。</td></tr>
+            <tr><td>OpenAI Responses</td><td><code>responses</code></td><td>例如 <code>https://api.openai.com/v1</code>，也支持以 <code>/responses</code> 结尾的完整地址。</td></tr>
+            <tr><td>Anthropic Messages</td><td><code>anthropic</code></td><td>官方地址用 <code>https://api.anthropic.com</code>；第三方兼容服务需显式选择此协议，并填写 Max Tokens。</td></tr>
+            <tr><td>外部 Agent</td><td><code>acp</code></td><td>填写启动 Command，使用外部 Agent 自己的登录与模型配置，见<a href="#skills">技能与工具</a>。</td></tr>
+          </tbody>
+        </table></div>
+        <p class="guide-result"><strong>检查结果：</strong>保存后启动一个新 Copilot 对话进行验证。已有对话可点击顶部模型名称，或输入 <code>/model</code> 选择配置；这只切换当前对话，不会改写全局默认配置。</p>
+      </section>
+
+      <section id="ssh" class="guide-section">
+        <p class="guide-number">03 / 远程工作</p>
+        <h2>登录 SSH 服务器</h2>
+        <p>将服务器保存为 SSH 配置后，连接、文件浏览和端口转发都可以复用它。开始前准备好主机地址、用户名、SSH 端口及密码或密钥。</p>
+        <ol class="guide-steps">
+          <li>打开<strong>新建会话</strong>，进入 SSH 列表，选择<strong>新建 SSH 服务器</strong>。</li>
+          <li>填写名称（例如 <code>GPU 工作站</code>）、主机地址、用户和端口。SSH 默认端口一般是 <code>22</code>；管理员提供了其他端口就使用实际值。</li>
+          <li>按服务器要求选择认证方式。密码认证填写密码；密钥认证填写本机私钥文件路径；已有 OpenSSH 配置或 ssh-agent 时可使用 <code>credentials</code>。需要经过跳板机时填写跳板机。</li>
+          <li>选择<strong>保存并连接</strong>。首次连接时核对主机指纹，完成认证后会打开远程终端。</li>
+          <li>在远程终端运行 <code>hostname</code> 和 <code>pwd</code>，确认连接的机器和当前目录。以后从 SSH 列表选中这个配置，按 <kbd>Enter</kbd> 即可连接。</li>
+        </ol>
+        <h3>已经有 ~/.ssh/config？</h3>
+        <p>在命令中心运行<strong>导入 OpenSSH 配置</strong>（Load OpenSSH Config）。它会导入兼容的 Host、HostName、User、Port 和 ProxyJump 信息，跳过通配符 Host；认证继续由 OpenSSH 配置、默认密钥或 ssh-agent 处理，不会导入密码。</p>
+        <div class="guide-note"><strong>查看连接状况：</strong>连接后可从命令中心打开“开 / 关 SSH 延迟显示”。标题栏显示的是 Ping 往返时延；服务器禁用 ICMP 或连接经过跳板机时，可能显示不可用，这不等于 SSH 连接失败。</div>
+      </section>
+
+      <section id="copilot" class="guide-section">
+        <p class="guide-number">04 / AI 协作</p>
+        <h2>让 Copilot 带着终端上下文工作</h2>
+        <p>独立副驾标签页适合完整任务；终端侧栏适合解释当前输出、排查报错，以及辅助本地或远程操作。</p>
+        <ol class="guide-steps">
+          <li>切到需要帮助的终端，按 <kbd>Ctrl+Shift+A</kbd> 打开侧栏。</li>
+          <li>选中相关输出，再从命令中心执行<strong>发送给 Copilot</strong>。没有选区时，会使用最近的终端输出作为上下文卡片。</li>
+          <li>描述目标与范围。例如：“解释这段安装错误，先检查当前 Python 环境，给出修复建议。”</li>
+          <li>需要执行任务时，明确机器、目录和预期结果；查看工具调用和权限提示，再决定是否允许操作。请求进行中可按 <kbd>Esc</kbd> 停止。</li>
+        </ol>
+        <blockquote class="guide-example">请检查当前 SSH 服务器上的 <code>~/project</code>，确认运行分析所需的环境是否齐全。先报告缺失项，安装前等我确认。</blockquote>
+        <p>想把结果留档，可从命令中心选择 <strong>Export Copilot Markdown</strong> 导出对话；选择 <strong>Export Copilot Markdown Clean</strong> 可保留用户提示和最终回复，省略思考过程。</p>
+      </section>
+
+      <section id="conversations" class="guide-section">
+        <p class="guide-number">05 / 找回工作</p>
+        <h2>在对话中心继续上次的任务</h2>
+        <p>对话中心集中浏览 WispTerm 自己保存的副驾侧栏和 AI Chat 标签页记录，适合查找“前几天那段分析”并接着做。</p>
+        <ol class="guide-steps">
+          <li>打开命令中心，搜索并选择<strong>对话中心</strong>（Conversation Center）。</li>
+          <li>按来源和日期缩小范围，输入关键词搜索对话。选中记录后，在预览区确认内容。</li>
+          <li>点击<strong>继续</strong>或按 <kbd>Enter</kbd> 恢复对话。如果它已经打开，会切换到原会话。</li>
+        </ol>
+        <p>只想快速恢复时，命令中心的<strong>副驾历史</strong>（Copilot History）更直接：输入标题或模型关键词，按上下键选择，再按 Enter。需要完整筛选和预览时，点击<strong>对话中心 / Open Center</strong>，或按 <kbd>Ctrl+Enter</kbd>。</p>
+        <h3>Codex、Claude Code 等外部工具的记录在哪里？</h3>
+        <p>打开<strong>新建会话 → 会话（Sessions）</strong>，选择本机、WSL 或 SSH 目标，浏览外部 AI 工具的历史。选择记录可预览和恢复，也可用 <kbd>M</kbd> 导出 Markdown、<kbd>A</kbd> 附加到 Copilot。恢复需要目标机器上已安装相应工具，并且原项目目录仍然存在。</p>
+        <p class="guide-result"><strong>没有找到记录？</strong>先清除日期、来源和关键词筛选，再确认自己找的是 WispTerm 对话，还是外部 Agent 的历史。</p>
+      </section>
+
+      <section id="memory" class="guide-section">
+        <p class="guide-number">06 / 积累上下文</p>
+        <h2>用记忆中心保留有用的信息</h2>
+        <p>对话中心保留“说过什么”；记忆中心帮助你查看长期事实与从历史对话生成的摘要。长期记忆适合稳定的项目背景、工作偏好和环境约定。</p>
+        <h3>先保存一条长期记忆</h3>
+        <ol class="guide-steps">
+          <li>在 Copilot 中输入 <code>/记住 这个项目的分析结果统一保存在 results 目录</code>。</li>
+          <li>输入 <code>/记忆</code> 查看已保存的事实；也可以从命令中心打开<strong>记忆中心</strong>，选择来源和条目查看详情。</li>
+          <li>有工作目录时，记忆保存在项目层；没有工作目录时使用全局层。删除不再适用的条目可用 <code>/忘记 &lt;记忆名称&gt;</code>。</li>
+        </ol>
+        <h3>从历史对话生成摘要</h3>
+        <ol class="guide-steps">
+          <li>在记忆中心打开<strong>来源配置</strong>。</li>
+          <li>先勾选位置：本机、WSL 或某台已保存的 SSH 服务器，再勾选该位置下的工具。各位置可独立选择 Codex、Claude Code、Kimi 和 Grok Build；WispTerm 自身历史只在本机提供。</li>
+          <li>例如，CPU 服务器只选 Claude Code，GPU 服务器只选 Codex。Kimi 和 Grok Build 默认不勾选；按需启用。</li>
+          <li>修改会立即保存，并在下次摘要时生效。回到记忆中心按 <kbd>D</kbd>，或从命令中心运行 <strong>Run Memory Digest Now</strong>，等待采集和摘要完成后查看结果。</li>
+        </ol>
+        <div class="guide-note">生成摘要需要可用的 AI 配置，所选历史内容会用于向配置的模型服务请求摘要。先确认来源范围；停用某个位置会保留其工具选择和已有摘要，不会删除历史。</div>
+        <details class="guide-detail">
+          <summary>希望每天自动整理？</summary>
+          <p>在配置文件中开启每日摘要，并指定已保存的 AI 配置名称。下例的“日常助手”需要替换为你实际创建的名称，时间使用本机时区：</p>
+          <pre><code>memory-digest-enabled = true
+memory-digest-profile = 日常助手
+memory-digest-run-after = 04:00</code></pre>
+          <p>WispTerm 运行期间会在设定时间之后检查每日任务。不开启自动摘要也可以手动运行。具体来源以“来源配置”中的勾选为准。</p>
+        </details>
+        <p class="guide-result"><strong>记忆的用途：</strong>给后续工作提供背景。环境、路径或项目约定变了，要更新记忆；AI 生成的摘要也应对照原始记录核实。</p>
+      </section>
+
+      <section id="ports" class="guide-section">
+        <p class="guide-number">07 / 连接服务</p>
+        <h2>把服务器上的服务带到本机</h2>
+        <p>端口转发通过 SSH 连接两个端口。先保存并验证一个可用的 <a href="#ssh">SSH 配置</a>，再从命令中心打开<strong>端口转发</strong>（Port Forwarding）。</p>
+        <div class="guide-flow" aria-label="两种端口转发方向">
+          <div><strong>Local · 本地转发</strong><span>本机浏览器 <b aria-hidden="true">→</b> 服务器上的服务</span></div>
+          <div><strong>Reverse · 反向转发</strong><span>服务器上的程序 <b aria-hidden="true">→</b> 本机提供的服务</span></div>
+        </div>
+        <h3>例一：在本机打开远程 Jupyter</h3>
+        <ol class="guide-steps">
+          <li>在服务器启动 Jupyter，让它监听服务器的 <code>127.0.0.1:8888</code>，记下输出中的 token。</li>
+          <li>在端口转发页按 <kbd>N</kbd> 新建规则，填写名称，例如 <code>Jupyter</code>。</li>
+          <li>在 <strong>Profile</strong> 选择该服务器；聚焦字段后可用左右键或空格切换已保存的配置。</li>
+          <li>按下面的示例填写字段，按 <kbd>Enter</kbd> 保存。回到列表，选中规则并按 <kbd>Space</kbd> 启动。</li>
+          <li>状态变为 <strong>Running</strong> 后，在本机浏览器打开 <code>http://127.0.0.1:8888</code>，按 Jupyter 的提示使用 token 登录。</li>
+        </ol>
+        <div class="guide-table" role="region" aria-label="端口转发示例配置" tabindex="0"><table>
+          <thead><tr><th scope="col">表单字段</th><th scope="col">Jupyter 本地转发</th><th scope="col">本机代理反向转发</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Direction</th><td><code>Local</code></td><td><code>Reverse</code></td></tr>
+            <tr><th scope="row">Local host</th><td><code>127.0.0.1</code></td><td><code>127.0.0.1</code></td></tr>
+            <tr><th scope="row">Local port</th><td><code>8888</code></td><td><code>7890</code></td></tr>
+            <tr><th scope="row">Remote host</th><td><code>127.0.0.1</code></td><td><code>127.0.0.1</code></td></tr>
+            <tr><th scope="row">Remote port</th><td><code>8888</code></td><td><code>7890</code></td></tr>
+          </tbody>
+        </table></div>
+        <h3>例二：让服务器使用本机 HTTP 代理</h3>
+        <p>确认本机代理实际监听 <code>127.0.0.1:7890</code>，按表格右列建立 Reverse 规则并启动，然后在服务器的 Shell 中设置：</p>
+        <pre><code>export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890</code></pre>
+        <p>端口要按实际服务调整。这两行影响当前 Shell 和它启动的程序；使用完可运行 <code>unset HTTP_PROXY HTTPS_PROXY</code>。</p>
+        <p>列表中 <kbd>Space</kbd> 启停、<kbd>E</kbd> 编辑、<kbd>R</kbd> 重启、<kbd>A</kbd> 切换自动启动。关闭管理标签页不会停止转发；需要结束时，回到列表停止规则。</p>
+        <div class="guide-note">当前支持的监听和目标地址为 <code>127.0.0.1</code> 或 <code>localhost</code>。本地端口被占用时，可把 Local port 改成 <code>8889</code>，Remote port 保持 <code>8888</code>，再访问本机的 8889 端口。</div>
+      </section>
+
+      <section id="files" class="guide-section">
+        <p class="guide-number">08 / 查看产物</p>
+        <h2>浏览、传输与预览文件</h2>
+        <ol class="guide-steps">
+          <li>切到本地、WSL 或 SSH 终端，按 <kbd>Ctrl+Shift+Alt+E</kbd> 打开文件浏览器。</li>
+          <li>进入目标目录，双击文件进行预览。也可以在终端输出中按住 <kbd>Ctrl</kbd> 点击文件路径，打开预览。</li>
+          <li>查看 Markdown、文本、表格、图片或 PDF。图片和 PDF 图集可用左右键切换文件；PDF 用 <kbd>PageUp</kbd> / <kbd>PageDown</kbd> 翻页。</li>
+          <li>在 SSH 文件浏览器中，可拖入本地文件或文件夹上传；<kbd>Shift+U</kbd> 选择整个文件夹上传。在 SSH 输出中 <kbd>Ctrl+Shift</kbd> 点击远程路径，可下载文件或目录。</li>
+        </ol>
+        <p>远程相对路径的识别依赖 Shell 上报当前工作目录。如果显示 <code>SSH cwd unknown</code>，先使用绝对路径，并按<a href="https://github.com/xuzhougeng/wispterm/blob/main/docs/file-explorer.md">文件浏览器说明</a>配置 Shell 集成。</p>
+        <p>网页链接可以在内置浏览器面板中打开；偏好系统浏览器时，在配置文件设置 <code>browser-open-mode = system-browser</code>。连接远程网页服务可使用上一节的端口转发。</p>
+      </section>
+
+      <section id="skills" class="guide-section">
+        <p class="guide-number">09 / 扩展工作方式</p>
+        <h2>用技能和工具复用经验</h2>
+        <h3>技能中心：管理可重复使用的操作说明</h3>
+        <p>从命令中心打开<strong>技能中心</strong>（Skill Center），查看本机与远程位置的技能，选中条目查看详情，再按页面操作导入或同步到需要的位置。技能通过 <code>SKILL.md</code> 描述用途和步骤；在 Copilot 中可以用 <code>$技能名</code> 引用。</p>
+        <p>刚完成一项值得复用的工作时，在对话中输入 <code>/沉淀 环境检查</code> 生成技能候选。先阅读预览，确认后输入 <code>/沉淀 确认</code> 保存；不合适则输入 <code>/沉淀 取消</code>。</p>
+        <h3>MCP：连接额外工具</h3>
+        <p>在命令中心打开<strong>MCP 服务器</strong>，按工具提供方的说明填写名称、启动命令和参数，保存后测试连接。涉及环境变量、请求头或其他复杂选项时，使用配置目录下的 <code>mcp.json</code>。详见 <a href="https://github.com/xuzhougeng/wispterm/blob/main/docs/ai-agent.md">Copilot 与工具配置说明</a>。</p>
+        <h3>ACP：使用已登录的外部 Agent</h3>
+        <p>如果已经安装并登录了外部 Agent，可新建一个 AI 配置，将 Protocol 设为 <code>acp</code>，填写适配器启动 Command。此模式不需要填写 Base URL、API Key 和 Model，由外部 Agent 管理认证和模型；先按<a href="https://github.com/xuzhougeng/wispterm/blob/main/docs/ai-agent.md#external-agents-via-acp">外部 Agent 接入说明</a>准备适配器。</p>
+      </section>
+
+      <section id="workspace" class="guide-section">
+        <p class="guide-number">10 / 日常操作</p>
+        <h2>把终端整理成顺手的工作环境</h2>
+        <div class="guide-table" role="region" aria-label="常用终端快捷键" tabindex="0"><table>
+          <thead><tr><th scope="col">想做什么</th><th scope="col">Windows / Linux</th><th scope="col">macOS</th></tr></thead>
+          <tbody>
+            <tr><td>新建会话</td><td><kbd>Ctrl+Shift+T</kbd></td><td><kbd>Cmd+Shift+T</kbd></td></tr>
+            <tr><td>向右 / 向下分屏</td><td><kbd>Ctrl+Shift++</kbd> / <kbd>Ctrl+Shift+-</kbd></td><td><kbd>Cmd+Shift++</kbd> / <kbd>Cmd+Shift+-</kbd></td></tr>
+            <tr><td>切换分屏方向</td><td><kbd>Ctrl+Shift+L</kbd></td><td><kbd>Cmd+Shift+L</kbd></td></tr>
+            <tr><td>下一个标签页</td><td><kbd>Ctrl+Tab</kbd></td><td><kbd>Ctrl+Tab</kbd></td></tr>
+            <tr><td>上一个 / 下一个面板</td><td><kbd>Ctrl+Shift+[</kbd> / <kbd>Ctrl+Shift+]</kbd></td><td><kbd>Cmd+Shift+[</kbd> / <kbd>Cmd+Shift+]</kbd></td></tr>
+            <tr><td>关闭当前面板或标签页</td><td><kbd>Ctrl+Shift+W</kbd></td><td><kbd>Cmd+W</kbd></td></tr>
+          </tbody>
+        </table></div>
+        <p>双击标签标题可重命名。在分屏里同时放代码、日志和 Copilot，可以减少来回切换。全屏 vim 或 Agent 界面可能接收 Alt+方向键，切换面板时可使用表格中的循环快捷键。</p>
+        <h3>主题、字体和配置文件</h3>
+        <p>在命令中心打开<strong>设置</strong>调整常用选项；先到<a href="./themes.html">主题库</a>选一个主题，再根据名称配置。需要更多选项时编辑配置文件，每行使用 <code>key = value</code>：</p>
+        <pre><code>theme = Poimandres
+font-size = 14
+copy-on-select = true
+right-click-action = paste</code></pre>
+        <p>Windows 配置位于 <code>%APPDATA%\wispterm\config</code>；macOS 为 <code>~/Library/Application Support/wispterm/config</code>；Linux 为 <code>$XDG_CONFIG_HOME/wispterm/config</code>，未设置时使用 <code>~/.config/wispterm/config</code>。便携配置可能覆盖默认位置。保存后支持热重载，需重启的选项以界面提示为准。</p>
+        <p>更多选项见<a href="https://github.com/xuzhougeng/wispterm/blob/main/docs/configuration.md">完整配置参考</a>，全部快捷键见<a href="https://github.com/xuzhougeng/wispterm#keyboard-shortcuts">快捷键列表</a>。</p>
+      </section>
+
+      <section id="help" class="guide-section">
+        <p class="guide-number">11 / 排查问题</p>
+        <h2>卡住时，从这里检查</h2>
+        <details class="guide-detail"><summary>AI 配置保存了，但没有回复</summary><p>先检查界面中的 API 错误：401/403 通常与密钥或权限有关，429 可能是额度或限流；404 要核对 Base URL、Protocol 和模型 ID。连接超时则检查网络与代理。确认服务商允许该账号调用所填模型后，再开一个新对话测试。</p></details>
+        <details class="guide-detail"><summary>SSH 连接失败</summary><p>核对主机、端口、用户和认证方式。先在本机终端用 <code>ssh -p 22 user@host</code>（替换为实际信息）检查是否能连接；使用密钥时确认私钥路径和文件权限。需要 VPN 或跳板机的环境，先确保网络路径可达。</p></details>
+        <details class="guide-detail"><summary>端口转发显示 Error，或网页打不开</summary><p>查看规则旁的具体 SSH 错误。依次确认 SSH 配置可连接、转发规则处于 Running、目标服务正在监听预期端口、本地端口未被占用。Jupyter 等应用仍可能要求 token 或密码；转发不会绕过应用登录。</p></details>
+        <details class="guide-detail"><summary>记忆中心没有摘要</summary><p>先确认所选位置上有对应工具的真实历史记录，再检查“来源配置”是否同时启用了位置和工具。确认摘要使用的 AI 配置可用，手动运行一次并查看结果。尚未采集、没有可读记录或模型请求失败时，都可能没有摘要。</p></details>
+        <details class="guide-detail"><summary>找不到教程中的入口</summary><p>优先在命令中心按功能名称查找，并核对中英文名称。若当前安装较旧，可先到<a href="./zh.html#install">下载页面</a>更新。Windows 和 macOS 的快捷键有差异；Linux 桌面目前仍为实验性支持。</p></details>
+        <div class="guide-next"><h3>准备开始？</h3><p>先完成一个小任务：连接一台服务器、打开 Copilot 解释一段输出，再把有用的项目约定保存到记忆里。</p><a href="#api">配置第一个 AI 服务 <span aria-hidden="true">→</span></a></div>
+      </section>
+    </main>
+  </div>
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div><img src="assets/wispterm.png" alt="" width="20" height="20"><span>WispTerm · MIT 协议</span></div>
+      <div class="footer-links"><a href="./zh.html">首页</a><a href="./ai.zh.html">AI 功能</a><a href="https://github.com/xuzhougeng/wispterm/issues">问题反馈</a><a href="#guide-content">回到顶部 ↑</a></div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -88,6 +88,8 @@ kbd {
 
 .nav {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
@@ -105,8 +107,9 @@ kbd {
 
 .nav-links {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 22px;
+  gap: 12px 18px;
 }
 .nav-links a {
   color: var(--fg-muted);
@@ -1148,7 +1151,7 @@ pre.code-block code {
   font-size: 0.9rem;
 }
 .footer-inner img { vertical-align: middle; margin-right: 8px; }
-.footer-links { display: flex; gap: 18px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
 .footer-links a { color: var(--fg-muted); }
 .footer-links a:hover { color: var(--accent); }
 
@@ -1156,6 +1159,7 @@ pre.code-block code {
 @media (max-width: 720px) {
   .nav-links { gap: 12px; }
   .nav-links a:not(.github):not(.lang) { display: none; }
+  .nav-links a.tutorial-link:not(.github):not(.lang) { display: inline-flex; }
   .lang-switch { font-size: 0.78rem; }
   .lang-switch .lang { padding: 4px 10px; }
   .hero { padding: 56px 0 32px; }
