@@ -11,8 +11,9 @@
   <meta property="og:type" content="article">
   <meta name="theme-color" content="#1b1e28">
   <link rel="icon" href="assets/favicon.ico">
-  <link rel="stylesheet" href="style.css?v=9">
-  <link rel="stylesheet" href="tutorial.css?v=1">
+  <script src="theme.js?v=1"></script>
+  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="tutorial.css?v=2">
 </head>
 <body class="tutorial-page">
   <a class="skip-link" href="#guide-content">跳到教程正文</a>
@@ -20,6 +21,7 @@
     <div class="container nav">
       <a class="brand" href="./zh.html"><img src="assets/wispterm.png" alt="" width="28" height="28"><span>WispTerm</span></a>
       <nav class="nav-links" aria-label="网站导航">
+        <button class="theme-toggle" type="button" data-theme-toggle hidden>Theme</button>
         <a href="./zh.html">首页</a>
         <a class="tutorial-link active-link" href="./tutorial.zh.html" aria-current="page">教程</a>
         <a href="./ai.zh.html">AI</a>
@@ -54,6 +56,7 @@
         <p class="eyebrow">WISPTERM / 使用指南</p>
         <h1>从第一次连接，<br>到每天的工作。</h1>
         <p class="guide-lead">在一个终端里连接服务器、使用 AI、找回对话和积累记忆。按顺序完成首次配置，也可以从左侧目录直接找到需要的功能。</p>
+        <p class="guide-photo-note">配图均为 Windows 实机截图，使用演示服务器与示例记录。点击图片可查看原图。</p>
         <div class="guide-routes" aria-label="推荐阅读路线">
           <a href="#api"><strong>先用 AI</strong><span>配置 API → 开始对话 → 保存记忆</span></a>
           <a href="#ssh"><strong>先连服务器</strong><span>SSH 登录 → 端口转发 → 查看文件</span></a>
@@ -69,6 +72,10 @@
           <div><dt>新建会话</dt><dd>点击标签栏的 <strong>＋</strong> 或按 <kbd>Ctrl+Shift+T</kbd>，选择本地 Shell、WSL、SSH、副驾或历史会话。</dd></div>
           <div><dt>终端旁的 Copilot</dt><dd>在终端标签页按 <kbd>Ctrl+Shift+A</kbd>，打开与当前终端关联的 AI 侧栏，一边查看输出，一边提问。</dd></div>
         </dl>
+        <figure class="guide-shot guide-shot--form">
+          <a href="assets/tutorial/session-launcher.png" target="_blank" rel="noopener" aria-label="查看新建会话截图原图"><img src="assets/tutorial/session-launcher.png" alt="WispTerm 新建会话菜单，可选择本地终端、SSH、WSL、tmux、副驾和历史会话" width="524" height="390" loading="lazy" decoding="async"></a>
+          <figcaption>新建会话：先选择本地终端、远程连接或副驾。</figcaption>
+        </figure>
         <div class="guide-note">下文快捷键以 Windows 为例。macOS 通常将 <kbd>Ctrl</kbd> 换为 <kbd>Cmd</kbd>、<kbd>Alt</kbd> 换为 <kbd>Opt</kbd>；切换标签页仍使用 <kbd>Ctrl+Tab</kbd>。自定义过快捷键时，以自己的配置为准。</div>
       </section>
 
@@ -85,6 +92,10 @@
         </ol>
         <h3>使用其他服务或自定义模型</h3>
         <p>在命令中心选择<strong>管理 AI 配置</strong>（Manage AI Profiles），或进入<strong>设置 → AI 配置</strong>，新建或编辑配置。</p>
+        <figure class="guide-shot guide-shot--form">
+          <a href="assets/tutorial/api-profile.png" target="_blank" rel="noopener" aria-label="查看 API 配置截图原图"><img src="assets/tutorial/api-profile.png" alt="副驾配置表单中的接口地址、API 密钥、模型、智能体和协议字段，演示中密钥留空" width="520" height="790" loading="lazy" decoding="async"></a>
+          <figcaption>自定义 AI 配置。图中 API 密钥留空；实际使用时填写自己的密钥。</figcaption>
+        </figure>
         <div class="guide-table" role="region" aria-label="AI 配置字段" tabindex="0"><table>
           <thead><tr><th scope="col">字段</th><th scope="col">怎么填</th></tr></thead>
           <tbody>
@@ -119,6 +130,10 @@
           <li>选择<strong>保存并连接</strong>。首次连接时核对主机指纹，完成认证后会打开远程终端。</li>
           <li>在远程终端运行 <code>hostname</code> 和 <code>pwd</code>，确认连接的机器和当前目录。以后从 SSH 列表选中这个配置，按 <kbd>Enter</kbd> 即可连接。</li>
         </ol>
+        <figure class="guide-shot guide-shot--form">
+          <a href="assets/tutorial/ssh-profile.png" target="_blank" rel="noopener" aria-label="查看 SSH 配置截图原图"><img src="assets/tutorial/ssh-profile.png" alt="SSH 服务器配置表单，演示主机 gpu.example.com、用户 researcher、端口 22 和密钥认证" width="584" height="588" loading="lazy" decoding="async"></a>
+          <figcaption>SSH 配置示例：主机、用户、端口与认证方式在同一个表单里填写。示例地址不能用于实际登录。</figcaption>
+        </figure>
         <h3>已经有 ~/.ssh/config？</h3>
         <p>在命令中心运行<strong>导入 OpenSSH 配置</strong>（Load OpenSSH Config）。它会导入兼容的 Host、HostName、User、Port 和 ProxyJump 信息，跳过通配符 Host；认证继续由 OpenSSH 配置、默认密钥或 ssh-agent 处理，不会导入密码。</p>
         <div class="guide-note"><strong>查看连接状况：</strong>连接后可从命令中心打开“开 / 关 SSH 延迟显示”。标题栏显示的是 Ping 往返时延；服务器禁用 ICMP 或连接经过跳板机时，可能显示不可用，这不等于 SSH 连接失败。</div>
@@ -148,6 +163,10 @@
           <li>点击<strong>继续</strong>或按 <kbd>Enter</kbd> 恢复对话。如果它已经打开，会切换到原会话。</li>
         </ol>
         <p>只想快速恢复时，命令中心的<strong>副驾历史</strong>（Copilot History）更直接：输入标题或模型关键词，按上下键选择，再按 Enter。需要完整筛选和预览时，点击<strong>对话中心 / Open Center</strong>，或按 <kbd>Ctrl+Enter</kbd>。</p>
+        <figure class="guide-shot">
+          <a href="assets/tutorial/conversation-center.png" target="_blank" rel="noopener" aria-label="查看对话中心截图原图"><img src="assets/tutorial/conversation-center.png" alt="对话中心：左侧按来源和日期筛选，中间选择记录，右侧预览对话并点击继续" width="1600" height="1000" loading="lazy" decoding="async"></a>
+          <figcaption>对话中心：筛选来源和日期，预览记录，再继续选中的对话。图中为示例对话。</figcaption>
+        </figure>
         <h3>Codex、Claude Code 等外部工具的记录在哪里？</h3>
         <p>打开<strong>新建会话 → 会话（Sessions）</strong>，选择本机、WSL 或 SSH 目标，浏览外部 AI 工具的历史。选择记录可预览和恢复，也可用 <kbd>M</kbd> 导出 Markdown、<kbd>A</kbd> 附加到 Copilot。恢复需要目标机器上已安装相应工具，并且原项目目录仍然存在。</p>
         <p class="guide-result"><strong>没有找到记录？</strong>先清除日期、来源和关键词筛选，再确认自己找的是 WispTerm 对话，还是外部 Agent 的历史。</p>
@@ -163,6 +182,10 @@
           <li>输入 <code>/记忆</code> 查看已保存的事实；也可以从命令中心打开<strong>记忆中心</strong>，选择来源和条目查看详情。</li>
           <li>有工作目录时，记忆保存在项目层；没有工作目录时使用全局层。删除不再适用的条目可用 <code>/忘记 &lt;记忆名称&gt;</code>。</li>
         </ol>
+        <figure class="guide-shot">
+          <a href="assets/tutorial/memory-center.png" target="_blank" rel="noopener" aria-label="查看记忆中心截图原图"><img src="assets/tutorial/memory-center.png" alt="记忆中心的 AI 记忆列表与详情，示例条目说明分析结果统一保存到 results 目录" width="1600" height="1000" loading="lazy" decoding="async"></a>
+          <figcaption>记忆中心：选择一条长期记忆，查看保存的约定与详细内容。</figcaption>
+        </figure>
         <h3>从历史对话生成摘要</h3>
         <ol class="guide-steps">
           <li>在记忆中心打开<strong>来源配置</strong>。</li>
@@ -171,6 +194,10 @@
           <li>修改会立即保存，并在下次摘要时生效。回到记忆中心按 <kbd>D</kbd>，或从命令中心运行 <strong>Run Memory Digest Now</strong>，等待采集和摘要完成后查看结果。</li>
         </ol>
         <div class="guide-note">生成摘要需要可用的 AI 配置，所选历史内容会用于向配置的模型服务请求摘要。先确认来源范围；停用某个位置会保留其工具选择和已有摘要，不会删除历史。</div>
+        <figure class="guide-shot">
+          <a href="assets/tutorial/memory-sources.png" target="_blank" rel="noopener" aria-label="查看记忆来源配置截图原图"><img src="assets/tutorial/memory-sources.png" alt="记忆来源配置中的位置和工具复选框，本机已启用，WSL 停用后保留工具选择" width="1600" height="1000" loading="lazy" decoding="async"></a>
+          <figcaption>来源配置：每个位置独立选择要采集的工具；向下滚动可配置已保存的 SSH 服务器。</figcaption>
+        </figure>
         <details class="guide-detail">
           <summary>希望每天自动整理？</summary>
           <p>在配置文件中开启每日摘要，并指定已保存的 AI 配置名称。下例的“日常助手”需要替换为你实际创建的名称，时间使用本机时区：</p>
@@ -208,12 +235,23 @@ memory-digest-run-after = 04:00</code></pre>
             <tr><th scope="row">Remote port</th><td><code>8888</code></td><td><code>7890</code></td></tr>
           </tbody>
         </table></div>
+        <figure class="guide-shot">
+          <a href="assets/tutorial/port-forwarding-form.png" target="_blank" rel="noopener" aria-label="查看端口转发表单截图原图"><img src="assets/tutorial/port-forwarding-form.png" alt="Jupyter 本地转发规则表单，选择 GPU 工作站示例配置，将本地 8888 端口映射到远程 8888 端口" width="744" height="422" loading="lazy" decoding="async"></a>
+          <figcaption>Jupyter 转发配置示例：选择服务器，Direction 设为 Local，两端端口都填写 8888。</figcaption>
+        </figure>
         <h3>例二：让服务器使用本机 HTTP 代理</h3>
         <p>确认本机代理实际监听 <code>127.0.0.1:7890</code>，按表格右列建立 Reverse 规则并启动，然后在服务器的 Shell 中设置：</p>
         <pre><code>export HTTP_PROXY=http://127.0.0.1:7890
 export HTTPS_PROXY=http://127.0.0.1:7890</code></pre>
         <p>端口要按实际服务调整。这两行影响当前 Shell 和它启动的程序；使用完可运行 <code>unset HTTP_PROXY HTTPS_PROXY</code>。</p>
         <p>列表中 <kbd>Space</kbd> 启停、<kbd>E</kbd> 编辑、<kbd>R</kbd> 重启、<kbd>A</kbd> 切换自动启动。关闭管理标签页不会停止转发；需要结束时，回到列表停止规则。</p>
+        <details class="guide-detail">
+          <summary>查看端口转发管理页</summary>
+          <figure class="guide-shot">
+            <a href="assets/tutorial/port-forwarding.png" target="_blank" rel="noopener" aria-label="查看端口转发列表截图原图"><img src="assets/tutorial/port-forwarding.png" alt="端口转发列表显示本地 Jupyter 与反向 HTTP 代理两条示例规则，状态均为 Stopped" width="1600" height="1000" loading="lazy" decoding="async"></a>
+            <figcaption>列表展示方向、端口、自动启动设置和运行状态。演示规则未连接服务器，状态为 Stopped。</figcaption>
+          </figure>
+        </details>
         <div class="guide-note">当前支持的监听和目标地址为 <code>127.0.0.1</code> 或 <code>localhost</code>。本地端口被占用时，可把 Local port 改成 <code>8889</code>，Remote port 保持 <code>8888</code>，再访问本机的 8889 端口。</div>
       </section>
 
