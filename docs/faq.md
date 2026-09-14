@@ -88,6 +88,27 @@ right-click-action = copy-or-paste
 These shortcuts operate on the local system clipboard. tmux's own copy-mode
 buffer remains separate unless tmux is configured to synchronize it.
 
+## Why Does Pasting into Vim over SSH Add Indentation or Comment Characters?
+
+Vim uses bracketed paste to distinguish clipboard text from typing. When it
+enables terminal mode 2004, WispTerm wraps the text in `ESC [ 200 ~` and
+`ESC [ 201 ~`, preserving newlines and indentation inside the paste.
+
+On Windows, also check `ssh -V` in the shell used to launch the connection.
+Windows OpenSSH 7.7 does not support VT input: the console transport discards
+the paste markers before they reach remote Vim, even if Vim's `t_BE`, `t_BD`,
+`t_PS`, and `t_PE` settings are correct. Microsoft confirmed this behavior and
+the fix in Windows OpenSSH 8.1+ in
+[Windows Terminal issue #9364](https://github.com/microsoft/terminal/issues/9364#issuecomment-789992943).
+If affected, update Windows OpenSSH and check `where.exe ssh` to ensure the
+updated executable is selected, then open a new SSH session.
+
+For a temporary workaround, run `:set paste` before entering Insert mode and
+pasting, then `:set nopaste` afterward. If a current SSH client still has the
+problem, include its version and the Windows version in the bug report;
+Vim's option values alone do not establish whether the transport delivered
+the bracketed-paste sequences.
+
 ## Why Is the OpenGL Fallback Laggy or Black on a Low-Spec PC?
 
 This section applies to the separately published OpenGL fallback package. Its

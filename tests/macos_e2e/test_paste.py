@@ -10,6 +10,8 @@ migration). The marker carries no newline, so it sits on the command line rather
 than executing; a trailing Ctrl-C clears it so the shared shell stays clean.
 """
 import subprocess
+import shlex
+import shutil
 import sys
 import time
 
@@ -36,3 +38,44 @@ def test_cmd_v_pastes_clipboard_into_pty(app, pane):
         app.wait_for(pane, _MARKER, timeout=8)
     finally:
         app.send_text("\x03", pane)  # clear the pasted line off the prompt
+
+
+@pytest.mark.e2e
+@pytest.mark.macos_only
+def test_cmd_v_preserves_multiline_script_in_vim(app, pane, tmp_path):
+    """Issue #632: paste in Insert mode with indentation/comment continuation on."""
+    vim = shutil.which("vim")
+    if vim is None:
+        pytest.skip("vim is required for the bracketed-paste regression")
+    script = (
+        "#SBATCH -w node01\n"
+        "#SBATCH -c 24\n\n"
+        "set -euo pipefail\n\n"
+        'for f in "$A" "$B"; do\n'
+        '    [[ -s "$f" ]] || exit 1\n'
+        "done"
+    )
+    output = tmp_path / "pasted.sh"
+    subprocess.run(["pbcopy"], input=script, text=True, check=True)
+    app.focus()
+    app.ensure_keyboard_ready(pane)
+    app.send_text("\x03", pane)
+    time.sleep(0.3)
+    command = shlex.join([
+        vim, "-Nu", "NONE", "-n", "-i", "NONE",
+        "-c", "set nocompatible autoindent smartindent comments=b:# formatoptions=cro showmode",
+        "-c", "startinsert", str(output),
+    ])
+    app.send_text(command + "\r", pane)
+    try:
+        app.wait_for(pane, "-- INSERT --", timeout=8)
+        app.key("v", "cmd")
+        app.wait_for(pane, "done", timeout=8)
+        app.send_text("\x1b:wq\r", pane)
+        deadline = time.monotonic() + 8
+        while not output.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert output.read_text() == script + "\n"
+    finally:
+        if not output.exists():
+            app.send_text("\x1b:q!\r", pane)

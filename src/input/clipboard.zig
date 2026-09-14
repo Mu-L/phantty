@@ -70,25 +70,128 @@ pub fn writeToPty(surface: *Surface, data: []const u8) void {
 }
 
 pub fn writePasteToPty(surface: *Surface, allocator: std.mem.Allocator, data: []const u8) void {
-    const bracketed = surface.terminal.modes.get(.bracketed_paste);
+    if (data.len == 0) return;
+
+    // Like Ghostty's completeClipboardPaste, snapshot the negotiated mode under
+    // the same lock used by the PTY reader. Release it before allocating or
+    // waiting for mailbox capacity so output processing can keep progressing.
+    const bracketed = bracketed: {
+        surface.render_state.mutex.lock();
+        defer surface.render_state.mutex.unlock();
+        break :bracketed surface.terminal.modes.get(.bracketed_paste);
+    };
+    pty_write_log.debug("paste: bracketed={} bytes={d}", .{ bracketed, data.len });
+
+    if (bracketed) {
+        // A paste is one input transaction. Three independent queue writes can
+        // lose a fencepost under backpressure or interleave a terminal reply
+        // with the body. Queue the entire frame or deliver none of it.
+        const start = "\x1b[200~";
+        const end = "\x1b[201~";
+        const framed = std.mem.concat(allocator, u8, &.{ start, data, end }) catch |err| {
+            pty_write_log.warn("could not encode paste: {s}", .{@errorName(err)});
+            return;
+        };
+        defer allocator.free(framed);
+        mutatePasteData(framed[start.len .. framed.len - end.len], true);
+        writeToPty(surface, framed);
+        return;
+    }
+
     var owned: ?[]u8 = null;
     var body = data;
-    if (pasteNeedsMutation(data, bracketed)) {
-        owned = allocator.dupe(u8, data) catch return;
-        mutatePasteData(owned.?, bracketed);
+    if (pasteNeedsMutation(data, false)) {
+        owned = allocator.dupe(u8, data) catch |err| {
+            pty_write_log.warn("could not encode paste: {s}", .{@errorName(err)});
+            return;
+        };
+        mutatePasteData(owned.?, false);
         body = owned.?;
     }
     defer {
         if (owned) |buf| allocator.free(buf);
     }
 
-    if (bracketed) {
-        writeToPty(surface, "\x1b[200~");
-        writeToPty(surface, body);
-        writeToPty(surface, "\x1b[201~");
-    } else {
-        writeToPty(surface, body);
+    writeToPty(surface, body);
+}
+
+fn initPasteTestSurface(surface: *Surface) !void {
+    surface.allocator = std.testing.allocator;
+    surface.terminal = try ghostty_vt.Terminal.init(std.testing.allocator, .{ .cols = 80, .rows = 24 });
+    errdefer surface.terminal.deinit(std.testing.allocator);
+    surface.render_state = @import("../renderer/State.zig").init(&surface.terminal);
+    surface.mailbox = try @import("../termio/Mailbox.zig").init();
+    surface.io_state_mutex = .{};
+    surface.io_state = .running;
+    surface.exited = std.atomic.Value(bool).init(false);
+}
+
+fn expectPasteTestWrite(surface: *Surface, expected: []const u8) !void {
+    const msg = surface.mailbox.popWrite() orelse return error.MissingPaste;
+    defer msg.deinit();
+    switch (msg) {
+        .write_small => |*payload| try std.testing.expectEqualStrings(expected, payload.data[0..payload.len]),
+        .write_alloc => |payload| try std.testing.expectEqualStrings(expected, payload.data),
+        else => return error.UnexpectedMessage,
     }
+    try std.testing.expect(surface.mailbox.popWrite() == null);
+}
+
+test "paste uses negotiated mode and queues complete Vim multiline paste (issue 632)" {
+    var surface: Surface = undefined;
+    try initPasteTestSurface(&surface);
+    defer surface.terminal.deinit(std.testing.allocator);
+    defer surface.mailbox.deinit();
+    var stream = Surface.VtStream.initAlloc(std.testing.allocator, Surface.VtHandler.init(&surface.terminal, &surface));
+    defer stream.deinit();
+
+    // Enable as Vim does, including a PTY read split in the middle of DECSET.
+    stream.nextSlice("\x1b[?20");
+    stream.nextSlice("04h");
+    const script = "#SBATCH -w node01\n#SBATCH -c 24\n\nset -euo pipefail\n\n" ++
+        "for f in \"$A\" \"$B\"; do\n    [[ -s \"$f\" ]] || exit 1\ndone\n";
+    writePasteToPty(&surface, std.testing.allocator, script);
+    try expectPasteTestWrite(&surface, "\x1b[200~" ++ script ++ "\x1b[201~");
+
+    // Leaving Vim must restore ordinary paste, including LF -> CR conversion.
+    stream.nextSlice("\x1b[?2004l");
+    writePasteToPty(&surface, std.testing.allocator, "one\ntwo\n");
+    try expectPasteTestWrite(&surface, "one\rtwo\r");
+}
+
+test "large bracketed paste retains framing and sanitizes embedded escape bytes" {
+    var surface: Surface = undefined;
+    try initPasteTestSurface(&surface);
+    defer surface.terminal.deinit(std.testing.allocator);
+    defer surface.mailbox.deinit();
+    surface.terminal.modes.set(.bracketed_paste, true);
+
+    const body = "  # comment\n\n" ** 40;
+    writePasteToPty(&surface, std.testing.allocator, body ++ "\x1b[201~\x03");
+    try expectPasteTestWrite(&surface, "\x1b[200~" ++ body ++ " [201~ \x1b[201~");
+}
+
+test "bracketed paste fits the last mailbox slot without losing its body or end marker" {
+    var surface: Surface = undefined;
+    try initPasteTestSurface(&surface);
+    defer surface.terminal.deinit(std.testing.allocator);
+    defer surface.mailbox.deinit();
+    surface.terminal.modes.set(.bracketed_paste, true);
+
+    const Message = @import("../termio/message.zig").Message;
+    const filler = try Message.writeReq(std.testing.allocator, "x");
+    var queued: usize = 0;
+    while (surface.mailbox.sendWrite(filler) == .queued) queued += 1;
+    const first = surface.mailbox.popWrite() orelse return error.MissingFiller;
+    first.deinit();
+    queued -= 1;
+
+    writePasteToPty(&surface, std.testing.allocator, "#SBATCH\n\n    command\n");
+    for (0..queued) |_| {
+        const msg = surface.mailbox.popWrite() orelse return error.MissingFiller;
+        msg.deinit();
+    }
+    try expectPasteTestWrite(&surface, "\x1b[200~#SBATCH\n\n    command\n\x1b[201~");
 }
 
 fn quotePathForPaste(allocator: std.mem.Allocator, path: []const u8) ?[]u8 {
