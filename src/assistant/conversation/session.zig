@@ -37,6 +37,7 @@ const terminal_lease = @import("../../agent/terminal_lease.zig");
 const session_identity = @import("identity.zig");
 const prompt_queue = @import("prompt_queue.zig");
 const session_queue = @import("session_queue.zig");
+const table_hscroll = @import("table_hscroll.zig");
 
 pub const AgentSettings = ai_chat_types.AgentSettings;
 pub const AgentPermission = ai_chat_types.AgentPermission;
@@ -1104,6 +1105,8 @@ pub const Session = struct {
     prompt_queue: PromptQueue = .{},
     queue_open: bool = false,
     queue_selected: usize = 0,
+    /// Pan offset for a markdown table that is wider than the message. UI thread.
+    table_hscroll: table_hscroll.State = .{},
     created_at_ms: i64 = 0,
     updated_at_ms: i64 = 0,
     history_on_change: ?HistoryChangeHook = null,
@@ -3744,6 +3747,24 @@ pub const Session = struct {
         defer self.mutex.unlock();
         self.scroll_px = @max(0.0, self.scroll_px + delta_px);
         self.scrollbar_show_time = std.time.milliTimestamp();
+    }
+
+    /// UI-thread only (mirrors unlocked `queue_open` / `scroll_px` reads in the renderer).
+    pub fn tableHScrollOffset(self: *const Session, message_index: usize, table_start: usize, content_w: f32, clip_w: f32) f32 {
+        return self.table_hscroll.offsetFor(message_index, table_start, content_w, clip_w);
+    }
+
+    pub fn scrollTableHorizontal(
+        self: *Session,
+        message_index: usize,
+        table_start: usize,
+        delta: f32,
+        content_w: f32,
+        clip_w: f32,
+    ) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.table_hscroll.scroll(message_index, table_start, delta, content_w, clip_w);
     }
 
     pub fn scrollToPx(self: *Session, px: f32) void {

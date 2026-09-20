@@ -8,6 +8,7 @@ const i18n = @import("../../i18n.zig");
 const composer_layout = @import("../../assistant/conversation/composer_layout.zig");
 const scrollbar_model = @import("../../assistant/conversation/scrollbar_model.zig");
 const md = @import("../../markdown_text.zig");
+const table_hscroll = @import("../../assistant/conversation/table_hscroll.zig");
 const detail_wrap = @import("../../composer_detail_wrap.zig");
 
 // Transcript scrollbar interaction state (one mouse). Set by input.zig,
@@ -424,7 +425,21 @@ pub fn render(
                 selection.rangeForMessage(message_index)
             else
                 null;
-            renderMessageBubble(msg.role, msg.content, content_x, cursor_top, content_w, block_h, window_height, transcript_selected, selection_range, palette);
+            renderMessageBubble(
+                session,
+                message_index,
+                msg.role,
+                msg.content,
+                content_x,
+                cursor_top,
+                content_w,
+                block_h,
+                window_height,
+                transcript_selected,
+                selection_range,
+                palette,
+                transcript_viewport.clip,
+            );
         }
         cursor_top += block_h;
 
@@ -632,7 +647,7 @@ pub fn transcriptTextHitTest(
             if (px >= body_x - hit_slop and px <= body_x + body_w + hit_slop and py >= body_top and py <= body_top + body_h) {
                 return .{
                     .message_index = message_index,
-                    .byte_offset = byteOffsetForMarkdownPoint(msg.content, body_x, body_top, body_w, px, py),
+                    .byte_offset = byteOffsetForMarkdownPoint(session, message_index, msg.content, body_x, body_top, body_w, px, py),
                 };
             }
         }
@@ -647,6 +662,117 @@ pub fn transcriptTextHitTest(
         cursor_top += blockGapAfter(session.messages.items, message_index);
     }
 
+    return null;
+}
+
+pub const WideTableHit = struct {
+    message_index: usize,
+    table_start: usize,
+    content_w: f32,
+    clip_w: f32,
+};
+
+/// Overflowing markdown table under the pointer, if any. Used to pan wide
+/// tables horizontally (issue #624) instead of wrapping every long cell.
+pub fn wideTableAtPoint(
+    session: *ai_chat.Session,
+    xpos: f64,
+    ypos: f64,
+    window_width: f32,
+    window_height: f32,
+    titlebar_offset: f32,
+    chat_x: f32,
+    chat_w: f32,
+) ?WideTableHit {
+    _ = window_width;
+    const x = @round(chat_x);
+    const w = @round(@max(1.0, chat_w));
+    if (w <= 1) return null;
+
+    session.mutex.lock();
+    defer session.mutex.unlock();
+
+    const approval = session.approvalView();
+    const approval_h: f32 = if (approval) |view| approvalCardHeight(view) + APPROVAL_GAP else 0;
+    const question = if (approval == null) session.questionView() else null;
+    const question_h: f32 = if (question) |view| questionCardHeight(view) + APPROVAL_GAP else 0;
+    const input_h = inputLayout(x, w, session.input()).input_h;
+    const frame = ai_chat_layout.panelFrame(window_height, titlebar_offset, x, w, HEADER_H) orelse return null;
+    const transcript_viewport = ai_chat_layout.transcriptViewport(frame, window_height, input_h, approval_h + question_h, LINE_PAD_X, 18);
+    const content_w = transcript_viewport.content_w;
+    const content_x = transcript_viewport.content_x;
+    const transcript_top = transcript_viewport.transcript_top_px;
+    const transcript_h = transcript_viewport.clip.h;
+    const viewport_bottom_top_px = transcript_viewport.viewport_bottom_top_px;
+    const content_h = transcriptContentHeight(session.messages.items, content_w);
+    const scroll_px = @min(session.scroll_px, @max(0.0, content_h - transcript_h));
+    const gravity_offset = @max(0.0, transcript_h - content_h);
+    const px: f32 = @floatCast(xpos);
+    const py: f32 = @floatCast(ypos);
+    var cursor_top = transcript_top + gravity_offset - scroll_px;
+
+    for (session.messages.items, 0..) |msg, message_index| {
+        const block_h = messageBlockHeight(session.messages.items, message_index, content_w);
+        if (msg.role == .assistant and sectionVisible(cursor_top, block_h, transcript_top, viewport_bottom_top_px)) {
+            const bubble = bubbleGeometry(msg.role, content_x, content_w);
+            const body_x = bubble.x + BUBBLE_PAD_X;
+            const body_top = cursor_top + BUBBLE_PAD_Y + lineHeight();
+            const body_w = @max(1.0, bubble.w - BUBBLE_PAD_X * 2);
+            if (overflowingTableAt(msg.content, body_x, body_top, body_w, px, py)) |hit| {
+                return .{
+                    .message_index = message_index,
+                    .table_start = hit.start,
+                    .content_w = hit.content_w,
+                    .clip_w = hit.clip_w,
+                };
+            }
+        }
+        cursor_top += block_h;
+        if (msg.reasoning) |reasoning| {
+            if (reasoning.len > 0) cursor_top += reasoningCardHeight(msg, content_w);
+        }
+        if (msg.usage_footer) |footer| {
+            if (footer.len > 0) cursor_top += usageFooterHeight(footer, content_w);
+        }
+        cursor_top += blockGapAfter(session.messages.items, message_index);
+    }
+    return null;
+}
+
+const OverflowTableAt = struct { start: usize, content_w: f32, clip_w: f32 };
+
+fn overflowingTableAt(text: []const u8, x: f32, top_px: f32, max_w: f32, px: f32, py: f32) ?OverflowTableAt {
+    if (std.mem.trim(u8, text, " \t\r\n").len == 0) return null;
+    const palette = markdownPalette(AppWindow.g_theme.background, AppWindow.g_theme.foreground, AppWindow.g_theme.cursor_color);
+    var cursor: usize = 0;
+    var current_top = top_px;
+    var in_code = false;
+    while (cursor < text.len) {
+        if (!in_code and isMarkdownTableStart(text, cursor)) {
+            const start = cursor;
+            const end = tableBlockEnd(text, cursor);
+            const table = TableLayout.init(text, start, end, max_w);
+            const block_h = tableBlockHeight(text, start, end, max_w);
+            if (table.overflows and px >= x and px <= x + table.clipWidth() and py >= current_top and py <= current_top + block_h) {
+                return .{ .start = start, .content_w = table.width(), .clip_w = table.clipWidth() };
+            }
+            current_top += block_h;
+            cursor = end;
+            continue;
+        }
+        const info = nextSourceLine(text, cursor);
+        cursor = info.next;
+        var clean_buf: [1024]u8 = undefined;
+        const prepared = prepareMarkdownLine(&clean_buf, info.line, in_code, palette);
+        switch (prepared.kind) {
+            .fence => {
+                current_top += prepared.line_h;
+                in_code = !in_code;
+            },
+            .blank, .rule => current_top += prepared.line_h,
+            .text => current_top += plainContentHeight(prepared.text, @max(1.0, max_w - prepared.indent), prepared.line_h),
+        }
+    }
     return null;
 }
 
@@ -1069,6 +1195,8 @@ fn markdownContentHeight(text: []const u8, max_w: f32) f32 {
 }
 
 fn renderMessageBubble(
+    session: *ai_chat.Session,
+    message_index: usize,
     role: ai_chat.Role,
     text: []const u8,
     x: f32,
@@ -1079,6 +1207,7 @@ fn renderMessageBubble(
     selected: bool,
     selection_range: ?ai_chat.TextSelectionRange,
     palette: MarkdownPalette,
+    transcript_clip: ai_chat_layout.DrawRect,
 ) void {
     const bg = AppWindow.g_theme.background;
     const fg = AppWindow.g_theme.foreground;
@@ -1105,7 +1234,19 @@ fn renderMessageBubble(
     const body_top = top_px + BUBBLE_PAD_Y + lineHeight();
     const body_w = @max(1.0, bubble.w - BUBBLE_PAD_X * 2);
     if (role == .assistant) {
-        _ = renderMarkdownContent(text, body_x, body_top, body_w, window_height, window_height, palette, selection_range);
+        _ = renderMarkdownContent(
+            text,
+            body_x,
+            body_top,
+            body_w,
+            window_height,
+            window_height,
+            palette,
+            selection_range,
+            session,
+            message_index,
+            transcript_clip,
+        );
     } else {
         renderWrappedSelection(text, 0, body_x, body_top, body_w, lineHeight(), selection_range, window_height, window_height);
         _ = renderWrappedText(text, body_x, body_top, body_w, lineHeight(), fg, window_height, window_height);
@@ -2015,6 +2156,9 @@ fn renderMarkdownContent(
     clip_bottom_top_px: f32,
     palette: MarkdownPalette,
     selection_range: ?ai_chat.TextSelectionRange,
+    session: ?*ai_chat.Session,
+    message_index: usize,
+    transcript_clip: ai_chat_layout.DrawRect,
 ) f32 {
     if (std.mem.trim(u8, text, " \t\r\n").len == 0) {
         return renderWrappedText("", x, top_px, max_w, lineHeight(), palette.normal, window_height, clip_bottom_top_px);
@@ -2029,7 +2173,25 @@ fn renderMarkdownContent(
         if (!in_code and isMarkdownTableStart(text, cursor)) {
             const table_start = cursor;
             const end = tableBlockEnd(text, cursor);
-            current_top += renderTableBlock(text, cursor, end, x, current_top, max_w, window_height, palette, display_cursor, selection_range);
+            const layout = TableLayout.init(text, table_start, end, max_w);
+            const hscroll = if (session) |s|
+                s.tableHScrollOffset(message_index, table_start, layout.width(), layout.clipWidth())
+            else
+                0;
+            current_top += renderTableBlock(
+                text,
+                cursor,
+                end,
+                x,
+                current_top,
+                max_w,
+                window_height,
+                palette,
+                display_cursor,
+                selection_range,
+                hscroll,
+                transcript_clip,
+            );
             display_cursor += md.tableBlockDisplayLen(text, table_start, end);
             cursor = end;
             continue;
@@ -2123,7 +2285,7 @@ fn forEachCopyBlock(
             const start = cursor;
             const end = tableBlockEnd(text, cursor);
             const table = TableLayout.init(text, start, end, max_w);
-            emit(ctx, CopyBlock{ .button = blockCopyButtonRect(x, current_top, table.width()), .start = start, .end = end });
+            emit(ctx, CopyBlock{ .button = blockCopyButtonRect(x, current_top, table.clipWidth()), .start = start, .end = end });
             current_top += tableBlockHeight(text, start, end, max_w);
             cursor = end;
             continue;
@@ -2173,6 +2335,8 @@ fn checkBlockHit(ctx: *BlockHitCtx, block: CopyBlock) void {
 }
 
 fn byteOffsetForMarkdownPoint(
+    session: *ai_chat.Session,
+    message_index: usize,
     text: []const u8,
     x: f32,
     top_px: f32,
@@ -2195,7 +2359,9 @@ fn byteOffsetForMarkdownPoint(
             const end = tableBlockEnd(text, cursor);
             const block_h = tableBlockHeight(text, cursor, end, max_w);
             if (py < current_top + block_h) {
-                return display_cursor + tableByteOffsetForPoint(text, start, end, max_w, x, current_top, px, py);
+                const layout = TableLayout.init(text, start, end, max_w);
+                const hscroll = session.tableHScrollOffset(message_index, start, layout.width(), layout.clipWidth());
+                return display_cursor + tableByteOffsetForPoint(text, start, end, max_w, x, current_top, px, py, hscroll);
             }
             current_top += block_h;
             display_cursor += md.tableBlockDisplayLen(text, start, end);
@@ -2312,9 +2478,11 @@ const TableLayout = struct {
     alignments: [TABLE_MAX_COLS]md.TableAlignment = .{.left} ** TABLE_MAX_COLS,
     count: usize = 0,
     pad: f32 = TABLE_CELL_PAD_X,
+    clip_w: f32 = 0,
+    overflows: bool = false,
 
     fn init(text: []const u8, start: usize, end: usize, max_w: f32) TableLayout {
-        var self: TableLayout = .{};
+        var self: TableLayout = .{ .clip_w = @max(1.0, max_w) };
         var cells: [TABLE_MAX_COLS][]const u8 = undefined;
         const header = nextSourceLine(text, start);
         self.count = parseTableRowCells(header.line, &cells);
@@ -2339,7 +2507,13 @@ const TableLayout = struct {
         const n: f32 = @floatFromInt(self.count);
         self.pad = @min(TABLE_CELL_PAD_X, @max(0, (max_w / n - 16) / 2));
         const available = @max(n, max_w - n * (self.pad * 2 + 1) - 1);
-        md.fitTableWidths(self.widths[0..self.count], available, TABLE_MIN_COL_W);
+        if (self.width() > max_w) {
+            // Issue #624: keep natural column widths and pan horizontally
+            // instead of wrapping every long cell into a tall stack.
+            self.overflows = true;
+        } else {
+            md.fitTableWidths(self.widths[0..self.count], available, TABLE_MIN_COL_W);
+        }
         return self;
     }
 
@@ -2347,6 +2521,10 @@ const TableLayout = struct {
         var total: f32 = 1;
         for (self.widths[0..self.count]) |w| total += w + self.pad * 2 + 1;
         return total;
+    }
+
+    fn clipWidth(self: TableLayout) f32 {
+        return if (self.overflows) self.clip_w else self.width();
     }
 
     fn rowHeight(self: TableLayout, line: []const u8) f32 {
@@ -2400,11 +2578,13 @@ fn tableBlockHeight(text: []const u8, start: usize, end: usize, max_w: f32) f32 
         cursor = info.next;
         if (!isTableSeparatorLine(info.line)) total += table.rowHeight(info.line);
     }
+    if (table.overflows) total += table_hscroll.TRACK_H + 4;
     return total;
 }
 
-fn tableByteOffsetForPoint(text: []const u8, start: usize, end: usize, max_w: f32, x: f32, top: f32, px: f32, py: f32) usize {
+fn tableByteOffsetForPoint(text: []const u8, start: usize, end: usize, max_w: f32, x: f32, top: f32, px: f32, py: f32, hscroll: f32) usize {
     const table = TableLayout.init(text, start, end, max_w);
+    const local_x = px + hscroll;
     var cursor = start;
     var row_top = top + TABLE_TOOLBAR_H;
     var offset: usize = 0;
@@ -2423,11 +2603,11 @@ fn tableByteOffsetForPoint(text: []const u8, start: usize, end: usize, max_w: f3
             defer cell.deinit();
             if (col < table.count) {
                 const cell_w = table.widths[col] + table.pad * 2 + 1;
-                if (py < row_top + height and (px < cell_x + cell_w or col + 1 == table.count)) {
+                if (py < row_top + height and (local_x < cell_x + cell_w or col + 1 == table.count)) {
                     var lines = TableCellLines{ .text = cell.text, .width = table.widths[col], .alignment = table.alignments[col] };
                     var line_top = row_top + TABLE_CELL_PAD_Y;
                     while (lines.next()) |line| {
-                        if (py < line_top + lineHeight()) return byteOffsetForLineX(line.text, offset + line.offset, cell_x + table.pad + line.inset, px);
+                        if (py < line_top + lineHeight()) return byteOffsetForLineX(line.text, offset + line.offset, cell_x + table.pad + line.inset, local_x);
                         line_top += lineHeight();
                     }
                     return offset + cell.text.len;
@@ -2456,12 +2636,26 @@ fn renderTableBlock(
     palette: MarkdownPalette,
     base_offset: usize,
     selection_range: ?ai_chat.TextSelectionRange,
+    hscroll: f32,
+    transcript_clip: ai_chat_layout.DrawRect,
 ) f32 {
     const table = TableLayout.init(text, start, end, max_w);
     if (table.count == 0) return 0;
     const table_w = table.width();
+    const clip_w = table.clipWidth();
+    const block_h = tableBlockHeight(text, start, end, max_w);
+    const origin_x = x - hscroll;
+
+    const table_clip = intersectDrawRect(transcript_clip, .{
+        .x = x,
+        .y = window_height - top_px - block_h,
+        .w = clip_w,
+        .h = block_h,
+    });
+    if (table_clip.w > 0 and table_clip.h > 0) ui_pipeline.beginClip(pipelineRect(table_clip));
+
     // Give Copy its own band so it never covers the final header cell.
-    renderTopQuad(x, table_w, window_height, top_px, TABLE_TOOLBAR_H, palette.table_bg);
+    renderTopQuad(origin_x, table_w, window_height, top_px, TABLE_TOOLBAR_H, palette.table_bg);
     var row_top = top_px + TABLE_TOOLBAR_H;
     var cursor = start;
     var row_index: usize = 0;
@@ -2476,11 +2670,11 @@ fn renderTableBlock(
         const visible = row_top + row_h >= 0 and row_top < window_height;
         if (visible) {
             const bg = if (row_index == 0) mixColor(palette.table_bg, AppWindow.g_theme.cursor_color, 0.10) else if (row_index % 2 == 0) palette.table_bg else palette.table_alt;
-            renderTopQuad(x, table_w, window_height, row_top, row_h, bg);
-            renderTopQuad(x, table_w, window_height, row_top, 1, palette.table_border);
-            renderTopQuad(x, 1, window_height, row_top, row_h, palette.table_border);
+            renderTopQuad(origin_x, table_w, window_height, row_top, row_h, bg);
+            renderTopQuad(origin_x, table_w, window_height, row_top, 1, palette.table_border);
+            renderTopQuad(origin_x, 1, window_height, row_top, row_h, palette.table_border);
         }
-        var cell_x = x + 1;
+        var cell_x = origin_x + 1;
         for (0..table.count) |col| {
             if (col > 0 and col < cell_count) offset += 3;
             var scratch: [256]u8 = undefined;
@@ -2513,8 +2707,25 @@ fn renderTableBlock(
         row_top += row_h;
         row_index += 1;
     }
-    renderTopQuad(x, table_w, window_height, row_top, 1, palette.table_border);
-    return row_top - top_px + 1;
+    renderTopQuad(origin_x, table_w, window_height, row_top, 1, palette.table_border);
+    if (table_hscroll.thumb(x, clip_w, table_w, hscroll, top_px, block_h)) |thumb| {
+        renderTopQuad(thumb.track_x, thumb.track_w, window_height, thumb.track_top_px, thumb.track_h, mixColor(palette.table_bg, palette.table_border, 0.45));
+        renderTopQuad(thumb.x, thumb.w, window_height, thumb.track_top_px, thumb.track_h, mixColor(palette.table_border, AppWindow.g_theme.cursor_color, 0.35));
+    }
+    ui_pipeline.beginClip(pipelineRect(transcript_clip));
+    return block_h;
+}
+
+fn pipelineRect(r: ai_chat_layout.DrawRect) ui_pipeline.Rect {
+    return .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
+}
+
+fn intersectDrawRect(a: ai_chat_layout.DrawRect, b: ai_chat_layout.DrawRect) ai_chat_layout.DrawRect {
+    const x1 = @max(a.x, b.x);
+    const y1 = @max(a.y, b.y);
+    const x2 = @min(a.x + a.w, b.x + b.w);
+    const y2 = @min(a.y + a.h, b.y + b.h);
+    return .{ .x = x1, .y = y1, .w = @max(0, x2 - x1), .h = @max(0, y2 - y1) };
 }
 
 fn renderWrappedSelection(
@@ -2796,20 +3007,26 @@ test "markdown table wrapping height and selection share cell geometry" {
     const text = "| Name | Path |\n| :--- | ---: |\n| 中文😀 | `C:/a/very/long/path/to/a/file.txt` |\n";
     const narrow = TableLayout.init(text, 0, text.len, 220);
     const wide = TableLayout.init(text, 0, text.len, 900);
-    try std.testing.expect(narrow.width() <= 220.01);
     try std.testing.expect(wide.width() <= 900.01);
-    try std.testing.expect(tableBlockHeight(text, 0, text.len, 220) >= tableBlockHeight(text, 0, text.len, 900));
+    try std.testing.expect(narrow.clipWidth() <= 220.01);
+    if (narrow.overflows) {
+        try std.testing.expect(narrow.width() > 220);
+        try std.testing.expect(tableBlockHeight(text, 0, text.len, 220) < tableBlockHeight(text, 0, text.len, 900) + 40);
+    } else {
+        try std.testing.expect(narrow.width() <= 220.01);
+        try std.testing.expect(tableBlockHeight(text, 0, text.len, 220) >= tableBlockHeight(text, 0, text.len, 900));
+    }
     const header = nextSourceLine(text, 0);
     const body_top = TABLE_TOOLBAR_H + narrow.rowHeight(header.line);
     const first_cell_x: f32 = 1 + narrow.pad;
     const row_offset = md.tableRowDisplayOffsetWithin(text, 0, text.len, 1);
-    try std.testing.expectEqual(row_offset, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, first_cell_x, body_top + TABLE_CELL_PAD_Y + 1));
+    try std.testing.expectEqual(row_offset, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, first_cell_x, body_top + TABLE_CELL_PAD_Y + 1, 0));
     const second_cell_x = 1 + narrow.widths[0] + narrow.pad * 2 + 1;
     const display = try md.allocDisplayText(std.testing.allocator, text);
     defer std.testing.allocator.free(display);
-    const offset = tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, second_cell_x, body_top + TABLE_CELL_PAD_Y + 1);
+    const offset = tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, second_cell_x, body_top + TABLE_CELL_PAD_Y + 1, 0);
     try std.testing.expectEqualStrings("C:/", display[offset..][0..3]);
-    try std.testing.expectEqual(display.len, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, 0, 10000));
+    try std.testing.expectEqual(display.len, tableByteOffsetForPoint(text, 0, text.len, 220, 0, 0, 0, 10000, 0));
     var copy_ctx = struct {
         count: usize = 0,
         fn check(ctx: *@This(), block: CopyBlock) void {
@@ -2824,7 +3041,24 @@ test "markdown table wrapping height and selection share cell geometry" {
     const sparse_table = TableLayout.init(sparse, 0, sparse.len, 220);
     const sparse_top = TABLE_TOOLBAR_H + sparse_table.rowHeight(nextSourceLine(sparse, 0).line);
     const sparse_offset = md.tableRowDisplayOffsetWithin(sparse, 0, sparse.len, 1);
-    try std.testing.expectEqual(sparse_offset + "short".len, tableByteOffsetForPoint(sparse, 0, sparse.len, 220, 0, 0, 219, sparse_top + 6));
+    try std.testing.expectEqual(sparse_offset + "short".len, tableByteOffsetForPoint(sparse, 0, sparse.len, 220, 0, 0, 219, sparse_top + 6, 0));
+}
+
+test "wide table keeps natural column width so it can pan horizontally" {
+    const text = "| A | B |\n| --- | --- |\n| short | `C:/very/long/path/that/should/not/wrap/when/the/panel/is/narrow.txt` |\n";
+    const table = TableLayout.init(text, 0, text.len, 180);
+    try std.testing.expect(table.overflows);
+    try std.testing.expect(table.width() > 180);
+    try std.testing.expectEqual(table.clipWidth(), @as(f32, 180));
+    const header = nextSourceLine(text, 0);
+    const body_top = TABLE_TOOLBAR_H + table.rowHeight(header.line);
+    const second_cell_x = 1 + table.widths[0] + table.pad * 2 + 1;
+    const display = try md.allocDisplayText(std.testing.allocator, text);
+    defer std.testing.allocator.free(display);
+    const unpanned = tableByteOffsetForPoint(text, 0, text.len, 180, 0, 0, 10, body_top + TABLE_CELL_PAD_Y + 1, 0);
+    const panned = tableByteOffsetForPoint(text, 0, text.len, 180, 0, 0, 10, body_top + TABLE_CELL_PAD_Y + 1, second_cell_x);
+    try std.testing.expect(panned > unpanned);
+    try std.testing.expect(std.mem.startsWith(u8, display[panned..], "C:/") or std.mem.indexOf(u8, display[panned..], "long") != null);
 }
 
 test "table line wrapping preserves UTF-8 boundaries and right alignment" {
