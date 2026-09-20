@@ -36,7 +36,7 @@ English | [简体中文](README.zh-CN.md)
 - **AI Agent sessions** - launch OpenAI-compatible Agent tabs, configure profiles, restore history, export Markdown transcripts, and distill reusable local skills
 - **Command-center Copilot History** - search saved AI Chat and Copilot sidebar conversations, grouped by date, with source filters for sidebar vs tab sessions. Open **Conversation Center** from the picker for date filters, transcript preview, and resume
 - **In-session model switching** - use `/model` or click the model label to move an active AI chat/Copilot session to another saved profile with a context summary handoff
-- **Prompt queue** - prompts submitted while a Copilot request is running are queued and auto-sent in order when the session goes idle; review, reorder, edit, or drop them from the queue panel
+- **Prompt queue** - prompts submitted while a Copilot request is running are queued and auto-sent in order when the session goes idle. Enter on the queue panel sends the selected follow-up into the conversation now (as guidance, like Codex / Claude Code / Grok); Esc returns it to the input to edit. You can also reorder or drop entries, and the command palette can show or clear the queue
 - **Send to Chat** - send the terminal selection (or recent output tail) to Copilot as a collapsible context card, via the command palette or a bindable `send_to_copilot` keybind action
 - **Fork session** - duplicate an AI conversation at any rewind point (rewind picker `f`, or whole-session from the command palette) to explore alternative approaches with shared history
 - **Workspace recipes** - save the current window's tab/split layout as a named recipe, restore it into a new window from the command palette, and export/import recipe JSON files to share setups
@@ -196,6 +196,8 @@ sessions hide the readout.
 | Toggle a memory source | **Space** in Memory Center → Source settings | **Space** in Memory Center → Source settings |
 | Edit AI Chat input cursor | Left/Right/Home/End/Delete/Backspace | Left/Right/Home/End/Delete/Backspace |
 | Stop in-flight AI Chat or Agent request | **Esc** in AI Chat while working | **Esc** in AI Chat while working |
+| Send a queued follow-up into the conversation now | **Enter** on Queued Prompts | **Enter** on Queued Prompts |
+| Return a queued follow-up to the input to edit | **Esc** on Queued Prompts | **Esc** on Queued Prompts |
 | Copy selection (right-click) | Right-click a selection | Right-click a selection |
 | Paste text | **Ctrl+V**; **Ctrl+Shift+V** also pastes text when the clipboard has no image | **Cmd+V**; **Cmd+Shift+V** also pastes text when the clipboard has no image |
 | Paste clipboard image | **Ctrl+Shift+V** | **Cmd+Shift+V** |

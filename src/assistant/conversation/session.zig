@@ -1096,8 +1096,9 @@ pub const Session = struct {
     // base64 images pasted into the composer, awaiting the next user message.
     pending_images: std.ArrayListUnmanaged(ai_chat_protocol.ImageBlock) = .empty,
     // busy（request_inflight）时提交的 prompt 进入这个内存队列，回到空闲后由
-    // drainPromptQueue（仅主循环 tick 调用）按 FIFO 自动发送。不持久化，
-    // 上限 prompt_queue.MAX_ENTRIES 条，重启即清空。
+    // drainPromptQueue（仅主循环 tick 调用）按 FIFO 自动发送。队列面板上
+    // Enter 会立刻 cancel-and-send 选中项（引导），Esc 取回 composer 编辑。
+    // 不持久化，上限 prompt_queue.MAX_ENTRIES 条，重启即清空。
     // 默认空壳仅供结构体字面量测试（Session{ .allocator = a }）编译；
     // 正常初始化走 Session.init 的 PromptQueue.init(allocator)。
     prompt_queue: PromptQueue = .{},
@@ -2093,10 +2094,17 @@ pub const Session = struct {
 
         if (self.queue_open) {
             // 队列面板打开时优先截获按键（仿 rewind 选择器）：↑↓ 选择、
-            // Alt+↑/↓ 重排、Delete/Backspace 删除、Enter 取回 composer 编辑、
-            // Esc 关闭。空面板或 composer 已有新文本时 Enter 不吞掉，落到
-            // 下面的 submit 路径（busy 时再次入队）。
-            if (session_queue.handlePanelKey(self, ev)) return;
+            // Alt+↑/↓ 重排、Delete/Backspace 删除、Enter 把选中项立即送进
+            // 对话当引导（cancel-and-send）、Esc 取回 composer 编辑。空面板
+            // 的 Enter 不吞掉，落到下面的 submit 路径。
+            switch (session_queue.handlePanelKey(self, ev)) {
+                .ignored, .fallthrough => {},
+                .consumed => return,
+                .send_now => {
+                    session_queue.sendQueuedPromptNow(self);
+                    return;
+                },
+            }
         }
 
         if (ev.ctrl and !ev.alt and ev.key == .key_a) {
@@ -2788,19 +2796,29 @@ pub const Session = struct {
         }
         if (self.request_thread) |thread| {
             if (self.request_inflight) {
-                // Busy: queue the prompt instead of dropping it. Pending images
-                // move into the entry so the next normal submit cannot steal
-                // them; the reply context (if any) travels with the entry. On a
-                // full queue keep the original reject behavior (prompt stays in
-                // the composer, context is cleared).
+                // Busy: queue a non-empty prompt instead of dropping it.
+                // Pending images move into the entry so the next normal submit
+                // cannot steal them; the reply context (if any) travels with
+                // the entry. On a full queue keep the original reject behavior
+                // (prompt stays in the composer, context is cleared).
+                // Empty composer + queued items: Enter again sends the head
+                // now (Codex / Claude Code / Grok double-Enter), even if the
+                // queue panel was dismissed.
                 const queued_text = std.mem.trim(u8, self.input(), " \t\r\n");
-                if (queued_text.len != 0 and session_queue.enqueueQueuedPromptLocked(self, queued_text, true, null)) {
-                    self.clearSubmittedInputLocked();
-                    self.queue_open = true;
-                } else {
-                    self.clearPendingReplyContextLocked();
+                if (queued_text.len != 0) {
+                    if (session_queue.enqueueQueuedPromptLocked(self, queued_text, true, null)) {
+                        self.clearSubmittedInputLocked();
+                        self.queue_open = true;
+                    } else {
+                        self.clearPendingReplyContextLocked();
+                    }
+                    self.mutex.unlock();
+                    return;
                 }
+                const send_now = self.prompt_queue.len() > 0;
+                self.clearPendingReplyContextLocked();
                 self.mutex.unlock();
+                if (send_now) self.stopRequest();
                 return;
             }
             self.request_thread = null;
@@ -4149,6 +4167,13 @@ pub const Session = struct {
     pub const drainPromptQueue = session_queue.drainPromptQueue;
     pub const togglePromptQueuePanel = session_queue.togglePromptQueuePanel;
     pub const clearPromptQueue = session_queue.clearPromptQueue;
+    pub const sendQueuedPromptNow = session_queue.sendQueuedPromptNow;
+
+    /// True while the queued-prompts popup above the composer is open.
+    /// UI-thread only (mirrors the renderer's unlocked `queue_open` read).
+    pub fn queuePanelOpen(self: *const Session) bool {
+        return self.queue_open;
+    }
 
     /// 对话中 role == .user 的消息条数（回溯点数量）。持锁内部版本。
     fn rewindPointCountLocked(self: *Session) usize {
