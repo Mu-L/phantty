@@ -1171,7 +1171,7 @@ pub fn commandDetail(action: CommandAction) ?[]const u8 {
         .open_port_forwarding => "管理 SSH 端口转发规则",
         .split_preview => "在右侧打开预览面板",
         .run_memory_digest_now => "扫描 AI 对话记录并生成今日摘要",
-        .show_prompt_queue => "查看、重排、编辑或删除 AI 忙时排队的 prompt",
+        .show_prompt_queue => "查看、重排、发送、编辑或删除 AI 忙时排队的 prompt",
         .clear_prompt_queue => "丢弃 AI 忙时排队的全部 prompt",
         .star_repo => "打开 WispTerm 的 GitHub 仓库,给它点个 Star",
         .save_workspace_recipe => "把当前窗口的布局保存为一个命名 Recipe",

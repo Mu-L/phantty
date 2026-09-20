@@ -3419,7 +3419,7 @@ fn dispatchKey(ev: platform_input.KeyEvent) ui_effect.UiEffect {
     }
 
     if (assistant_conversation.current(aiCopilotFocused())) |target| {
-        if (target.isSidebar() and ev.key_code == platform_input.key_escape) {
+        if (target.isSidebar() and ev.key_code == platform_input.key_escape and !target.session.queuePanelOpen()) {
             if (target.session.requestState().inflight) {
                 target.session.stopRequest();
             } else if (target.session.hasSelection()) {

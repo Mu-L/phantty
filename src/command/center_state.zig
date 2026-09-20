@@ -127,7 +127,7 @@ pub const command_entries = [_]CommandEntry{
     .{ .title = "Port Forwarding", .detail = "Manage SSH port forwarding rules", .shortcut = "", .action = .open_port_forwarding },
     .{ .title = "Split Preview", .detail = "Open a preview panel on the right", .shortcut = "", .action = .split_preview },
     .{ .title = "Run Memory Digest Now", .detail = "Scan AI chat logs and generate today's digest", .shortcut = "", .action = .run_memory_digest_now },
-    .{ .title = "Show Prompt Queue", .detail = "View, reorder, edit, or drop prompts queued while the AI is busy", .shortcut = "", .action = .show_prompt_queue },
+    .{ .title = "Show Prompt Queue", .detail = "View, reorder, send, edit, or drop prompts queued while the AI is busy", .shortcut = "", .action = .show_prompt_queue },
     .{ .title = "Clear Prompt Queue", .detail = "Drop every prompt queued while the AI is busy", .shortcut = "", .action = .clear_prompt_queue },
     .{ .title = "Star Me", .detail = "Open the WispTerm GitHub repo to give it a star", .shortcut = "", .action = .star_repo },
     .{ .title = "Save Workspace Recipe", .detail = "Save this window's layout as a named recipe", .shortcut = "", .action = .save_workspace_recipe },

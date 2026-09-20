@@ -1473,7 +1473,8 @@ const QUEUE_MAX_ROWS: usize = 6;
 /// picker): a header with the entry count and key hints, then one row per
 /// queued prompt — index, first-line text, [img] badge for attachments — with
 /// the selection highlighted and a scroll window keeping it in view. Row 0 is
-/// the queue head (the next prompt drainPromptQueue will send).
+/// the queue head (Enter send-now / drainPromptQueue). Esc returns the
+/// selected row to the composer for editing.
 fn renderPromptQueuePanel(session: *ai_chat.Session, layout: InputLayout) void {
     const entries = session.prompt_queue.entries.items;
     const total = entries.len;
@@ -1488,7 +1489,7 @@ fn renderPromptQueuePanel(session: *ai_chat.Session, layout: InputLayout) void {
     const row_h = @max(SUGGESTION_ROW_H + 8, font.g_titlebar_cell_height + REWIND_ROW_EXTRA);
     var title_buf: [40]u8 = undefined;
     const title = std.fmt.bufPrint(&title_buf, "Queued Prompts ({d})", .{total}) catch "Queued Prompts";
-    const hints = "Enter edit  Del  Alt+Up/Dn  Esc";
+    const hints = "Enter send  Esc edit  Del  Alt+Up/Dn";
     const split = ai_chat_layout.popupHeaderSplit(
         popup_x,
         popup_w,

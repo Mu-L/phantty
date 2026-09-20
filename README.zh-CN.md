@@ -35,7 +35,7 @@
 - **AI 智能体会话** —— 启动 OpenAI 兼容的智能体标签页，配置 profile、恢复历史，导出完整或精简的 Markdown 对话记录
 - **命令中心副驾历史** —— 搜索已保存的 AI Chat 与 Copilot 侧栏对话，按日期分组，并可按侧栏/标签页来源筛选
 - **会话内切换模型** —— 输入 `/model` 或点击模型标签，把当前 AI Chat/Copilot 会话切到另一个已保存 profile，并用摘要交接上下文
-- **Prompt 队列** —— Copilot 请求进行中提交的 prompt 自动排队，会话空闲后按序发送；队列面板里可查看、重排、编辑或删除
+- **Prompt 队列** —— Copilot 请求进行中提交的 prompt 自动排队，会话空闲后按序发送。队列面板里按 Enter 立即把选中项送进对话当引导（与 Codex / Claude Code / Grok 相同），按 Esc 回到输入框编辑；也可重排或删除。命令面板可打开或清空队列
 - **Send to Chat** —— 把终端选中文本（或最近输出）作为折叠上下文卡片发给 Copilot，可走命令面板或可绑定的 `send_to_copilot` 快捷键动作
 - **分叉会话** —— 在任意 rewind 点复制当前 AI 对话（rewind 选择器按 `f`，或从命令面板整体复制），带着共享历史分别尝试不同方案
 - **工作区 Recipe** —— 把当前窗口的标签/分屏布局保存为命名 recipe，从命令面板一键恢复到新窗口，并可导出/导入 recipe JSON 文件分享工作环境
@@ -193,6 +193,8 @@ keybind = global:ctrl+backquote=toggle_quake
 | 刷新本地 AI 历史扫描 | 本地 AI 历史中 **R** | 本地 AI 历史中 **R** |
 | 编辑 AI 聊天输入光标 | Left/Right/Home/End/Delete/Backspace | Left/Right/Home/End/Delete/Backspace |
 | 停止进行中的 AI 聊天或智能体请求 | 工作时在 AI 聊天中按 **Esc** | 工作时在 AI 聊天中按 **Esc** |
+| 把排队的 follow-up 立即送进对话 | 在 Queued Prompts 上按 **Enter** | 在 Queued Prompts 上按 **Enter** |
+| 把排队的 follow-up 取回输入框编辑 | 在 Queued Prompts 上按 **Esc** | 在 Queued Prompts 上按 **Esc** |
 | 复制选区（右键） | 右键点击选区 | 右键点击选区 |
 | 粘贴文本 | **Ctrl+V**；剪贴板没有图片时，**Ctrl+Shift+V** 也会粘贴文本 | **Cmd+V**；剪贴板没有图片时，**Cmd+Shift+V** 也会粘贴文本 |
 | 粘贴剪贴板图片 | **Ctrl+Shift+V** | **Cmd+Shift+V** |
