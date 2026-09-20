@@ -226,8 +226,9 @@ demand.
 
 AI Chat tabs and the Copilot sidebar share the native Markdown renderer. Tables
 have header shading, cell borders, and left/center/right alignment from their
-delimiter row. Long cells wrap within the message width; narrow panels give
-more space to long columns. Tables currently wrap rather than scroll horizontally.
+delimiter row. Tables that fit the message wrap long cells. Tables that are
+wider than the message keep their natural column widths and pan horizontally
+when you scroll the wheel over them, so long paths stay on one line.
 Escaped pipes (`\|`), Chinese text, emoji, and code-span punctuation are preserved,
 and cells longer than 256 bytes are no longer truncated.
 

@@ -7125,6 +7125,30 @@ fn reportMouseMotion(surface: *Surface, button: mouse_report.Button, ev: platfor
     });
 }
 
+fn scrollWideMarkdownTable(
+    chat: *AppWindow.ai_chat.Session,
+    ev: platform_input.MouseWheelEvent,
+    window_width: f32,
+    window_height: f32,
+    chat_x: f32,
+    chat_w: f32,
+) bool {
+    const hit = AppWindow.assistant_conversation_renderer.wideTableAtPoint(
+        chat,
+        @floatFromInt(ev.xpos),
+        @floatFromInt(ev.ypos),
+        window_width,
+        window_height,
+        @floatCast(titlebarHeight()),
+        chat_x,
+        chat_w,
+    ) orelse return false;
+    const delta: f32 = -@as(f32, @floatFromInt(ev.delta)) * 72.0 / 120.0;
+    if (!chat.scrollTableHorizontal(hit.message_index, hit.table_start, delta, hit.content_w, hit.clip_w)) return false;
+    requestInputRepaint();
+    return true;
+}
+
 fn handleMouseWheel(ev: platform_input.MouseWheelEvent) void {
     overlays.startupShortcutsDismiss();
     if (overlays.btwConversationVisible()) {
@@ -7242,6 +7266,9 @@ fn handleMouseWheel(ev: platform_input.MouseWheelEvent) void {
                 requestInputRepaint();
                 return;
             }
+            const chat_x = AppWindow.leftPanelsWidth();
+            const chat_w = @as(f32, @floatFromInt(size.width)) - AppWindow.leftPanelsWidth() - AppWindow.rightPanelsWidthForWindow(size.width);
+            if (scrollWideMarkdownTable(chat, ev, @floatFromInt(size.width), @floatFromInt(size.height), chat_x, chat_w)) return;
             const delta: f32 = -@as(f32, @floatFromInt(ev.delta)) * 72.0 / 120.0;
             chat.scrollBy(delta);
             requestInputRebuild();
@@ -7281,6 +7308,7 @@ fn handleMouseWheel(ev: platform_input.MouseWheelEvent) void {
                     requestInputRepaint();
                     return;
                 }
+                if (scrollWideMarkdownTable(chat, ev, @floatFromInt(size.width), @floatFromInt(size.height), chat_x, chat_w)) return;
                 const delta: f32 = -@as(f32, @floatFromInt(ev.delta)) * 72.0 / 120.0;
                 chat.scrollBy(delta);
                 requestInputRebuild();
