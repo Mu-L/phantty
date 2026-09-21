@@ -35,7 +35,11 @@ The built-in defaults are:
 - Request mode: DeepSeek thinking enabled, `reasoning_effort = high`, non-streaming
 
 The default agent prompt is platform-aware: on Windows it uses `powershell_exec`
-for local commands; on macOS and Linux it uses `shell_exec`. All variants route
+for local commands; on macOS and Linux it uses `shell_exec`. Those tools wait
+for the process to exit, bounded by `ai-agent-command-timeout-ms` (default 60s),
+and stop as soon as the direct child exits even if a grandchild still holds
+stdout/stderr. Start long-lived servers in a terminal tab rather than through
+the local command tool. All variants route
 open SSH/WSL terminals through WispTerm's terminal tools, avoid pasting shell
 commands into Codex/Claude Code REPLs, and keep Python environment management
 on `uv`. For existing AI profiles, clear the System field to use the current

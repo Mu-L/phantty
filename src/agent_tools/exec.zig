@@ -7,6 +7,7 @@ const agent_prompt_answer = @import("../terminal_agents/prompt_answer.zig");
 const ai_agent_access = @import("../agent/access.zig");
 const terminal_lease = @import("../agent/terminal_lease.zig");
 const platform_process = @import("../platform/process.zig");
+const process_runner = @import("../process_runner.zig");
 const terminal_tools = @import("terminal.zig");
 const tool_access = @import("access.zig");
 const tool_output = @import("output.zig");
@@ -93,133 +94,46 @@ pub fn runShellCommand(allocator: std.mem.Allocator, command: []const u8, cwd: ?
     return if (last_err) |err| err else error.NoLocalShellFallback;
 }
 
-pub const CaptureOutput = struct {
-    allocator: std.mem.Allocator,
-    file: std.fs.File,
-    max_bytes: usize,
-    data: []u8 = &.{},
-    truncated: bool = false,
-    failed: bool = false,
+fn toolContextCancelled(ptr: *const anyopaque) bool {
+    const ctx: *const ToolContext = @ptrCast(@alignCast(ptr));
+    return ctx.isCancelled();
+}
 
-    fn deinit(self: *CaptureOutput) void {
-        self.allocator.free(self.data);
-        self.data = &.{};
-    }
-};
-
+/// Spawn `argv`, capture bounded stdout/stderr, and always reap. Delegates to
+/// `process_runner.runCapture` so a grandchild that inherits the pipe write
+/// end cannot hang the caller on blocking pipe reads or thread join.
 pub fn runArgv(allocator: std.mem.Allocator, argv: []const []const u8, cwd: ?[]const u8, output_limit: u32, timeout_ms: u32, cancel_ctx: ?*const ToolContext) !ShellResult {
-    var child = std.process.Child.init(argv, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-    child.cwd = cwd;
-    child.create_no_window = true;
-    try child.spawn();
-
-    var stdout_capture = CaptureOutput{
-        .allocator = allocator,
-        .file = child.stdout.?,
-        .max_bytes = output_limit,
-    };
-    errdefer stdout_capture.deinit();
-    var stderr_capture = CaptureOutput{
-        .allocator = allocator,
-        .file = child.stderr.?,
-        .max_bytes = output_limit,
-    };
-    errdefer stderr_capture.deinit();
-
-    const stdout_thread = try std.Thread.spawn(.{}, captureOutputThread, .{&stdout_capture});
-    const stderr_thread = try std.Thread.spawn(.{}, captureOutputThread, .{&stderr_capture});
-
-    const wait_ms = @max(timeout_ms, 1);
-    const deadline = std.time.milliTimestamp() + @as(i64, @intCast(wait_ms));
-    var timed_out = false;
-    var canceled = false;
-    while (true) {
-        switch (platform_process.childExited(child.id, 25)) {
-            .running => {},
-            .exited => |code| {
-                // On POSIX childExited() already reaped the zombie via
-                // waitpid(WNOHANG). Pre-set Child.term so the child.wait()
-                // below takes std's cleanup-only fast path instead of calling
-                // waitpid() a second time — that second wait would hit ECHILD,
-                // which Zig's std.posix.waitpid treats as `unreachable` (abort).
-                // On Windows the process handle is NOT consumed by the poll, so
-                // leave term unset and let child.wait() close the handle.
-                if (builtin.os.tag != .windows) child.term = .{ .Exited = @intCast(code) };
-                break;
-            },
-            .gone => {
-                if (builtin.os.tag != .windows) child.term = .{ .Unknown = 0 };
-                break;
-            },
-        }
-        if (cancel_ctx) |c| {
-            if (c.isCancelled()) {
-                canceled = true;
-                _ = child.kill() catch {};
-                break;
-            }
-        }
-        if (std.time.milliTimestamp() >= deadline) {
-            timed_out = true;
-            _ = child.kill() catch {};
-            break;
-        }
+    var token = process_runner.CancelToken.init();
+    if (cancel_ctx) |c| {
+        token.probe = .{
+            .ctx = @ptrCast(c),
+            .is_cancelled = toolContextCancelled,
+        };
     }
 
-    stdout_thread.join();
-    stderr_thread.join();
+    const wait_ms: u64 = @max(timeout_ms, 1);
+    const captured = process_runner.runCapture(allocator, argv, .{
+        .timeout_ms = wait_ms,
+        .cancel = if (cancel_ctx != null) &token else null,
+        .max_stdout_bytes = output_limit,
+        .max_stderr_bytes = output_limit,
+        .kill_on_output_cap = false,
+        .cwd = cwd,
+    }) catch |err| switch (err) {
+        error.SpawnFailed => return error.SpawnFailed,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 
-    const exit_code: i32 = if (timed_out or canceled) 124 else blk: {
-        const term = try child.wait();
-        break :blk switch (term) {
-            .Exited => |code| @intCast(code),
-            .Signal => |sig| -@as(i32, @intCast(sig)),
-            .Stopped => |sig| -@as(i32, @intCast(sig)),
-            .Unknown => |code| @intCast(code),
-        };
+    const timed_out = captured.timed_out or captured.cancelled;
+    const exit_code: i32 = if (timed_out) 124 else switch (captured.termination) {
+        .exited => |code| std.math.cast(i32, code) orelse -1,
+        .killed => 124,
     };
     return .{
         .exit_code = exit_code,
-        .stdout = stdout_capture.data,
-        .stderr = stderr_capture.data,
-        .timed_out = timed_out or canceled,
-    };
-}
-
-pub fn captureOutputThread(capture: *CaptureOutput) void {
-    var out: std.ArrayListUnmanaged(u8) = .empty;
-    defer {
-        if (capture.failed) out.deinit(capture.allocator);
-    }
-
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const n = capture.file.read(&buf) catch {
-            break;
-        };
-        if (n == 0) break;
-        if (out.items.len < capture.max_bytes) {
-            const remaining = capture.max_bytes - out.items.len;
-            const take = @min(remaining, n);
-            out.appendSlice(capture.allocator, buf[0..take]) catch {
-                capture.failed = true;
-                return;
-            };
-            if (take < n) capture.truncated = true;
-        } else {
-            capture.truncated = true;
-        }
-    }
-
-    if (capture.truncated) {
-        out.appendSlice(capture.allocator, "\n...[truncated]\n") catch {};
-    }
-    capture.data = out.toOwnedSlice(capture.allocator) catch blk: {
-        capture.failed = true;
-        break :blk &.{};
+        .stdout = captured.stdout,
+        .stderr = captured.stderr,
+        .timed_out = timed_out,
     };
 }
 
@@ -1968,4 +1882,73 @@ test "terminal_answer_prompt cannot read another Agent's screen" {
     try std.testing.expect(std.mem.indexOf(u8, result, "Terminal access denied") != null);
     try std.testing.expectEqual(@as(usize, 0), host_ctx.snap_calls);
     try std.testing.expectEqual(@as(usize, 0), host_ctx.all_len);
+}
+
+test "runArgv uses process_runner instead of drain threads" {
+    const source = @embedFile("exec.zig");
+    // Split the needles so this guard's own source does not match them.
+    const raw_spawn = "std.process." ++ "Child.init";
+    const runner_call = "process_runner." ++ "runCapture";
+    const drain_thread = "captureOutput" ++ "Thread";
+    try std.testing.expect(std.mem.indexOf(u8, source, runner_call) != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, raw_spawn) == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, drain_thread) == null);
+}
+
+test "runArgv returns when a grandchild keeps stdout open" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const argv = [_][]const u8{ "sh", "-c", "( sleep 30 ) & printf done; exit 0" };
+    const started = std.time.milliTimestamp();
+    const result = try runArgv(a, &argv, null, 4096, 10_000, null);
+    defer a.free(result.stdout);
+    defer a.free(result.stderr);
+    const elapsed = std.time.milliTimestamp() - started;
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "done") != null);
+    try std.testing.expect(!result.timed_out);
+    try std.testing.expectEqual(@as(i32, 0), result.exit_code);
+    try std.testing.expect(elapsed < 2000);
+}
+
+test "runArgv times out a child that never exits" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const argv = [_][]const u8{ "sh", "-c", "sleep 30" };
+    const started = std.time.milliTimestamp();
+    const result = try runArgv(a, &argv, null, 4096, 150, null);
+    defer a.free(result.stdout);
+    defer a.free(result.stderr);
+    const elapsed = std.time.milliTimestamp() - started;
+    try std.testing.expect(result.timed_out);
+    try std.testing.expectEqual(@as(i32, 124), result.exit_code);
+    try std.testing.expect(elapsed < 5000);
+}
+
+test "runArgv cancels via ToolContext without waiting for the timeout" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+    const a = std.testing.allocator;
+    const cancelledTrue = struct {
+        fn call(_: *anyopaque) bool {
+            return true;
+        }
+    }.call;
+    var dummy: u8 = 0;
+    const ctx = ToolContext{
+        .allocator = a,
+        .ctx = &dummy,
+        .tool_host = null,
+        .tool_snapshot = null,
+        .settings = .{},
+        .approve = fakeApprove,
+        .cancelled = cancelledTrue,
+    };
+    const argv = [_][]const u8{ "sh", "-c", "sleep 30" };
+    const started = std.time.milliTimestamp();
+    const result = try runArgv(a, &argv, null, 4096, 10_000, &ctx);
+    defer a.free(result.stdout);
+    defer a.free(result.stderr);
+    const elapsed = std.time.milliTimestamp() - started;
+    try std.testing.expect(result.timed_out);
+    try std.testing.expectEqual(@as(i32, 124), result.exit_code);
+    try std.testing.expect(elapsed < 5000);
 }
