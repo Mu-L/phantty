@@ -26,6 +26,7 @@ const notification = @import("notification.zig");
 const platform_pty_command = @import("platform/pty_command.zig");
 const surface_registry = @import("surface_registry.zig");
 const platform_process = @import("platform/process.zig");
+const platform_local_path = @import("platform/local_path.zig");
 const ssh_connection_mod = @import("ssh/connection.zig");
 const clipboard_osc52 = @import("clipboard_osc52.zig");
 const osc_title = @import("osc_title.zig");
@@ -1781,34 +1782,34 @@ fn updateTitle(self: *Surface, title: []const u8, osc_num: u8) void {
     if (osc_num == 7) {
         // OSC 7: file://host/path — extract the path
         self.got_osc7_this_batch = true;
-        const prefix = "file://";
-        if (std.mem.startsWith(u8, title, prefix)) {
-            const after_prefix = title[prefix.len..];
-            if (std.mem.indexOfScalar(u8, after_prefix, '/')) |slash| {
-                const path = after_prefix[slash..];
+        if (platform_local_path.pathFromFileUri(title)) |raw_path| {
+            var native_buf: [512]u8 = undefined;
+            const path = if (builtin.os.tag == .windows)
+                platform_local_path.forLocalOpen(raw_path, &native_buf) orelse raw_path
+            else
+                raw_path;
 
-                // Store raw path for CWD inheritance
-                const raw_len = @min(path.len, self.cwd_path.len);
-                @memcpy(self.cwd_path[0..raw_len], path[0..raw_len]);
-                self.cwd_path_len = raw_len;
+            // Store raw path for CWD inheritance
+            const raw_len = @min(path.len, self.cwd_path.len);
+            @memcpy(self.cwd_path[0..raw_len], path[0..raw_len]);
+            self.cwd_path_len = raw_len;
 
-                // Format for display (with ~ for home)
-                const home_prefix = "/home/";
-                if (std.mem.startsWith(u8, path, home_prefix)) {
-                    const after_home = path[home_prefix.len..];
-                    const user_end = std.mem.indexOfScalar(u8, after_home, '/') orelse after_home.len;
-                    const home_len = home_prefix.len + user_end;
+            // Format for display (with ~ for home)
+            const home_prefix = "/home/";
+            if (std.mem.startsWith(u8, path, home_prefix)) {
+                const after_home = path[home_prefix.len..];
+                const user_end = std.mem.indexOfScalar(u8, after_home, '/') orelse after_home.len;
+                const home_len = home_prefix.len + user_end;
 
-                    const rest = path[home_len..];
-                    self.osc7_title[0] = '~';
-                    const rest_len = @min(rest.len, self.osc7_title.len - 1);
-                    @memcpy(self.osc7_title[1 .. 1 + rest_len], rest[0..rest_len]);
-                    self.osc7_title_len = 1 + rest_len;
-                } else {
-                    const path_len = @min(path.len, self.osc7_title.len);
-                    @memcpy(self.osc7_title[0..path_len], path[0..path_len]);
-                    self.osc7_title_len = path_len;
-                }
+                const rest = path[home_len..];
+                self.osc7_title[0] = '~';
+                const rest_len = @min(rest.len, self.osc7_title.len - 1);
+                @memcpy(self.osc7_title[1 .. 1 + rest_len], rest[0..rest_len]);
+                self.osc7_title_len = 1 + rest_len;
+            } else {
+                const path_len = @min(path.len, self.osc7_title.len);
+                @memcpy(self.osc7_title[0..path_len], path[0..path_len]);
+                self.osc7_title_len = path_len;
             }
         }
     } else {
