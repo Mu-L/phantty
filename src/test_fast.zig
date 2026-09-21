@@ -127,6 +127,16 @@ test "remote file capture helpers use process_runner" {
     try std.testing.expect(std.mem.indexOf(u8, remote_file_source, "child_output") == null);
 }
 
+test "agent exec runArgv uses process_runner instead of drain threads" {
+    const exec_source = @embedFile("agent_tools/exec.zig");
+    const raw_spawn = "std.process." ++ "Child.init";
+    const runner_call = "process_runner." ++ "runCapture";
+    const drain_thread = "captureOutput" ++ "Thread";
+    try std.testing.expect(std.mem.indexOf(u8, exec_source, runner_call) != null);
+    try std.testing.expect(std.mem.indexOf(u8, exec_source, raw_spawn) == null);
+    try std.testing.expect(std.mem.indexOf(u8, exec_source, drain_thread) == null);
+}
+
 test "SSH profile persistence is owned by ssh_profile_store" {
     const overlays_source = @embedFile("renderer/overlays.zig");
     try std.testing.expect(std.mem.indexOf(u8, overlays_source, "ssh_profile_store.loadProfiles") != null);
