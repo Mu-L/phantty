@@ -191,6 +191,16 @@ test "agent SSH connection resolver uses the surface registry, not tab threadloc
     try std.testing.expect(std.mem.indexOf(u8, body, "tab.g_") == null);
 }
 
+test "btw child session inherits source agent tools" {
+    const source = @embedFile("assistant/conversation/session.zig");
+    const start = std.mem.indexOf(u8, source, "pub fn createBtwSession") orelse return error.MissingCreateBtw;
+    const rest = source[start..];
+    const end = std.mem.indexOf(u8, rest, "pub fn thinkingConfigValue") orelse return error.MissingCreateBtwEnd;
+    const body = rest[0..end];
+    try std.testing.expect(std.mem.indexOf(u8, body, "self.agentConfigValue()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "You may use tools") != null);
+}
+
 test "agent request disables worker snapshot fallback when UI capture fails" {
     const source = @embedFile("assistant/conversation/session.zig");
     const start = std.mem.indexOf(u8, source, "fn buildRequestLocked") orelse return error.MissingBuildRequestLocked;
