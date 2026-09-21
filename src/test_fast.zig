@@ -523,6 +523,7 @@ test {
     // reap-exactly-once. Spawn-based tests gate on non-Windows; type guards run
     // everywhere.
     _ = @import("process_runner.zig");
+    _ = @import("platform/local_path.zig");
     _ = @import("platform/process_group.zig");
     _ = @import("terminal_agents/detector.zig");
     _ = @import("terminal_agents/integration_prompt.zig");
