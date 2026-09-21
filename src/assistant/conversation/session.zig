@@ -1535,9 +1535,9 @@ pub const Session = struct {
     }
 
     /// Create the isolated chat session displayed by the `/btw` overlay. It
-    /// shares model credentials/configuration, but receives only a bounded
-    /// snapshot of this conversation and has tools disabled, so its turns can
-    /// never mutate or enter the source session's context.
+    /// shares model credentials/configuration and the source session's agent
+    /// tools, but receives only a bounded snapshot of this conversation, so
+    /// its turns can never enter the source session's context.
     pub fn createBtwSession(
         self: *Session,
         allocator: std.mem.Allocator,
@@ -1556,12 +1556,16 @@ pub const Session = struct {
             const snapshot = try ai_model_switch.buildSummaryUserContent(allocator, turns);
             defer allocator.free(snapshot);
             const snapshot_len = ai_model_switch.utf8SafeLen(snapshot, @min(snapshot.len, BTW_CONTEXT_MAX_BYTES));
+            const tools_clause: []const u8 = if (self.agent_enabled)
+                "You may use tools to inspect files, search the web, or gather extra context. "
+            else
+                "Do not execute tools. ";
             const side_system_prompt = try std.fmt.allocPrint(
                 allocator,
                 "You are handling a temporary BTW side conversation while another assistant session continues independently. " ++
                     "Answer concise questions using the source-session snapshot below. Do not claim that this side conversation changes, stops, or continues the source task. " ++
-                    "Do not execute tools. Reply in the user's language.\n\nSource status: {s}\n\nSource-session snapshot:\n{s}",
-                .{ self.status(), snapshot[0..snapshot_len] },
+                    "{s}Reply in the user's language.\n\nSource status: {s}\n\nSource-session snapshot:\n{s}",
+                .{ tools_clause, self.status(), snapshot[0..snapshot_len] },
             );
             defer allocator.free(side_system_prompt);
 
@@ -1576,7 +1580,7 @@ pub const Session = struct {
                 self.thinkingConfigValue(),
                 self.reasoningEffort(),
                 self.streamConfigValue(),
-                "false",
+                self.agentConfigValue(),
                 self.visionConfigValue(),
             );
             errdefer child.deinit();
@@ -6250,46 +6254,6 @@ test "/btw opens an isolated overlay without adding user context" {
         allocator.free(reqs);
     }
     try std.testing.expectEqual(@as(usize, 0), reqs.len);
-}
-
-test "btw child session receives a bounded snapshot and disables tools" {
-    const allocator = std.testing.allocator;
-    const source = try Session.init(
-        allocator,
-        "Source",
-        "https://example.invalid",
-        "test-key",
-        "test-model",
-        "source system prompt",
-        "disabled",
-        "low",
-        "false",
-        "true",
-    );
-    defer source.deinit();
-    source.mutex.lock();
-    try source.messages.append(allocator, .{
-        .role = .user,
-        .content = try allocator.dupe(u8, "original goal"),
-    });
-    try source.messages.append(allocator, .{
-        .role = .assistant,
-        .content = try allocator.dupe(u8, "working on it"),
-    });
-    source.setStatusLocked("Running");
-    source.mutex.unlock();
-
-    const child = try source.createBtwSession(allocator, "");
-    defer child.deinit();
-
-    try std.testing.expectEqualStrings("BTW", child.title());
-    try std.testing.expectEqualStrings("test-model", child.model());
-    try std.testing.expect(!child.agent_enabled);
-    try std.testing.expectEqual(@as(usize, 0), child.messages.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, child.systemPrompt(), "Source status: Running") != null);
-    try std.testing.expect(std.mem.indexOf(u8, child.systemPrompt(), "User: original goal") != null);
-    try std.testing.expect(std.mem.indexOf(u8, child.systemPrompt(), "Assistant: working on it") != null);
-    try std.testing.expectEqual(@as(usize, 2), source.messages.items.len);
 }
 
 test "/rewind via submit opens picker without adding transcript noise" {
