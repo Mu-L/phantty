@@ -2835,6 +2835,9 @@ fn dispatchChar(ev: platform_input.CharEvent) ui_effect.UiEffect {
         if (effect.needs_rebuild) overlays.commandPaletteInsertChar(ev.codepoint);
         return effect;
     }
+    if (overlays.settingsPageVisible() and !ev.ctrl and !ev.alt and overlays.settingsPageInsertChar(ev.codepoint)) {
+        return input_effects.repaint();
+    }
     if (weixinQrPanelConsumesChar()) return .none;
     if (overlays.feishuRegPanelVisible()) return .none;
     if (browser_panel.urlBarFocused()) {

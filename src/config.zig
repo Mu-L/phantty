@@ -308,6 +308,15 @@ theme: ?[]const u8 = null,
 /// never appears unless the user opts in (see settings page / issue #184).
 @"ai-distill-suggest": bool = false,
 
+/// When true, AI provider HTTP uses a proxy. The address is `http-proxy`;
+/// an empty address uses the system proxy (WinHTTP, the macOS session, or
+/// https_proxy/http_proxy/all_proxy on Linux). Off leaves those calls direct.
+@"http-use-system-proxy": bool = false,
+
+/// Proxy for AI provider HTTP when `http-use-system-proxy` is on.
+/// Empty selects the system proxy. Otherwise `host:port` or `http://host:port`.
+@"http-proxy": []const u8 = "",
+
 /// Agent command permission mode: ask, auto, or full.
 @"ai-agent-permission": ai_agent_config.AgentPermission = .confirm,
 
@@ -885,6 +894,21 @@ fn applyKeyValue(self: *Config, allocator: std.mem.Allocator, key: []const u8, v
         } else {
             log.warn("invalid ai-distill-suggest: {s}", .{value});
         }
+    } else if (std.mem.eql(u8, key, "http-use-system-proxy")) {
+        if (std.mem.eql(u8, value, "true")) {
+            self.@"http-use-system-proxy" = true;
+        } else if (std.mem.eql(u8, value, "false")) {
+            self.@"http-use-system-proxy" = false;
+        } else {
+            log.warn("invalid http-use-system-proxy: {s}", .{value});
+        }
+    } else if (std.mem.eql(u8, key, "http-proxy")) {
+        const trimmed = std.mem.trim(u8, value, " \t\r\n");
+        if (trimmed.len > 255) {
+            log.warn("invalid http-proxy: {s}", .{value});
+            return;
+        }
+        self.@"http-proxy" = self.dupeString(allocator, trimmed) orelse return;
     } else if (std.mem.eql(u8, key, "right-click-action")) {
         if (RightClickAction.parse(value)) |action| {
             self.@"right-click-action" = action;
@@ -1781,6 +1805,8 @@ pub const settings_reset_keys = [_][]const u8{
     "language",
     "restore-tabs-on-startup",
     "ai-distill-suggest",
+    "http-use-system-proxy",
+    "http-proxy",
 };
 
 /// Revert every settings-page option to its built-in default by removing its
@@ -1896,6 +1922,8 @@ const default_config_template =
     \\# ai-agent-output-limit = 16384
     \\# ai-agent-working-dir =          # default dir for downloads/clones (empty = unset)
     \\# ai-distill-suggest = false      # auto-suggest distilling reusable tasks into a skill
+    \\# http-use-system-proxy = false  # send AI provider HTTP through a proxy
+    \\# http-proxy =                   # empty = system proxy; or 127.0.0.1:6789
     \\
     \\# Jina API key — used by $websearch / websearch and $webread / webread
     \\# (optional for $webread: r.jina.ai reads anonymously)
@@ -2470,6 +2498,22 @@ test "ai-distill-suggest parses true/false and defaults off" {
     // unknown value leaves it unchanged (still false)
     cfg.applyKeyValue(allocator, "ai-distill-suggest", "maybe", ".");
     try std.testing.expect(!cfg.@"ai-distill-suggest");
+}
+
+test "http-use-system-proxy parses true/false and defaults off" {
+    const allocator = std.testing.allocator;
+    var cfg = Config{};
+    defer cfg.deinit(allocator);
+    try std.testing.expect(!cfg.@"http-use-system-proxy");
+    try std.testing.expectEqualStrings("", cfg.@"http-proxy");
+    cfg.applyKeyValue(allocator, "http-use-system-proxy", "true", ".");
+    try std.testing.expect(cfg.@"http-use-system-proxy");
+    cfg.applyKeyValue(allocator, "http-proxy", " 127.0.0.1:6789 ", ".");
+    try std.testing.expectEqualStrings("127.0.0.1:6789", cfg.@"http-proxy");
+    cfg.applyKeyValue(allocator, "http-proxy", "", ".");
+    try std.testing.expectEqualStrings("", cfg.@"http-proxy");
+    cfg.applyKeyValue(allocator, "http-use-system-proxy", "false", ".");
+    try std.testing.expect(!cfg.@"http-use-system-proxy");
 }
 
 test "config: wispterm-d3d-present defaults on and parses false" {

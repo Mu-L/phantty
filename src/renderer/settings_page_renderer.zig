@@ -81,7 +81,7 @@ pub fn render(draw: DrawContext, view: View, layout: settings_page_layout.Layout
 
     const item_count = if (picker_open) state.pickerCount() else view.rows.len;
     renderScrollbar(draw, layout, window_height, item_count);
-    renderFooter(draw, layout, window_height, picker_open, muted, border);
+    renderFooter(draw, layout, window_height, picker_open, state.proxy_editing, state.proxy_draft_invalid, muted, border);
 }
 
 fn renderRow(draw: DrawContext, category: settings_page.Category, layout: settings_page_layout.Layout, window_height: f32, row: Row, row_index: usize, selected: bool) void {
@@ -176,14 +176,19 @@ fn renderScrollbar(draw: DrawContext, layout: settings_page_layout.Layout, windo
     draw.fillQuadAlpha(sb_x, @round(window_height - (layout.row_top_px + offset) - thumb_h), 3, thumb_h, draw.accent, 0.55);
 }
 
-fn renderFooter(draw: DrawContext, layout: settings_page_layout.Layout, window_height: f32, picker_open: bool, muted: [3]f32, border: [3]f32) void {
+fn renderFooter(draw: DrawContext, layout: settings_page_layout.Layout, window_height: f32, picker_open: bool, proxy_editing: bool, proxy_invalid: bool, muted: [3]f32, border: [3]f32) void {
     const footer_h = ui_patterns.workbenchFooterHeight(draw.cell_h);
     const footer_top = ui_patterns.workbenchFooterTop(window_height, layout.page_top_px, footer_h);
     const footer_y = @round(window_height - footer_top - footer_h);
     draw.fillQuadAlpha(layout.page_x, footer_y, layout.page_w, footer_h, mixColor(draw.bg, draw.fg, 0.030), 0.98);
     draw.fillQuadAlpha(layout.page_x, footer_y + footer_h - 1, layout.page_w, 1, border, 0.68);
+    const zh = i18n.lang() == .zh_CN;
     const text = if (picker_open)
-        (if (i18n.lang() == .zh_CN) "↑/↓ 选择  ·  Enter 应用  ·  Esc 返回" else "↑/↓ choose  ·  Enter apply  ·  Esc back")
+        (if (zh) "↑/↓ 选择  ·  Enter 应用  ·  Esc 返回" else "↑/↓ choose  ·  Enter apply  ·  Esc back")
+    else if (proxy_editing and proxy_invalid)
+        (if (zh) "格式应为 127.0.0.1:6789 或 http://127.0.0.1:6789" else "Use 127.0.0.1:6789 or http://127.0.0.1:6789")
+    else if (proxy_editing)
+        (if (zh) "输入 host:port  ·  Enter 保存  ·  Esc 取消  ·  清空则使用系统代理" else "Type host:port  ·  Enter save  ·  Esc cancel  ·  empty uses the system proxy")
     else
         i18n.s().settings_workbench_footer;
     _ = draw.renderTextLimited(text, layout.content_x, rowTextY(draw, footer_y, footer_h), muted, layout.content_w);
@@ -195,8 +200,8 @@ fn controlKind(row: usize) ControlKind {
     if (settings_page.SHELL_INTEGRATION_ROWS > 0 and (row == settings_page.SETTINGS_CONTROL_ROW_START + 9 or row == settings_page.SETTINGS_CONTROL_ROW_START + 10)) return .toggle;
     return switch (row) {
         settings_page.SETTINGS_FONT_SIZE_ROW => .adjuster,
-        settings_page.SETTINGS_FONT_FAMILY_ROW, settings_page.SETTINGS_THEME_ROW, settings_page.SETTINGS_CONTROL_ROW_START + 0, settings_page.SETTINGS_CONTROL_ROW_START + 3, settings_page.SETTINGS_CONTROL_ROW_START + 4, settings_page.SETTINGS_CONTROL_ROW_START + 6 => .choice,
-        settings_page.SETTINGS_CONTROL_ROW_START + 1, settings_page.SETTINGS_CONTROL_ROW_START + 2, settings_page.SETTINGS_CONTROL_ROW_START + 5, settings_page.SETTINGS_CONTROL_ROW_START + 7, settings_page.SETTINGS_CONTROL_ROW_START + 8 => .toggle,
+        settings_page.SETTINGS_FONT_FAMILY_ROW, settings_page.SETTINGS_THEME_ROW, settings_page.SETTINGS_CONTROL_ROW_START + 0, settings_page.SETTINGS_CONTROL_ROW_START + 3, settings_page.SETTINGS_CONTROL_ROW_START + 4, settings_page.SETTINGS_CONTROL_ROW_START + 6, settings_page.SETTINGS_PROXY_ADDRESS_ROW => .choice,
+        settings_page.SETTINGS_CONTROL_ROW_START + 1, settings_page.SETTINGS_CONTROL_ROW_START + 2, settings_page.SETTINGS_CONTROL_ROW_START + 5, settings_page.SETTINGS_CONTROL_ROW_START + 7, settings_page.SETTINGS_CONTROL_ROW_START + 8, settings_page.SETTINGS_SYSTEM_PROXY_ROW => .toggle,
         else => .action,
     };
 }
@@ -251,6 +256,8 @@ fn rowTitle(row: usize) []const u8 {
         settings_page.SETTINGS_CONTROL_ROW_START + 6 => i18n.s().settings_language,
         settings_page.SETTINGS_CONTROL_ROW_START + 7 => i18n.s().settings_restore_tabs,
         settings_page.SETTINGS_CONTROL_ROW_START + 8 => i18n.s().settings_distill_suggest,
+        settings_page.SETTINGS_SYSTEM_PROXY_ROW => i18n.s().settings_system_proxy,
+        settings_page.SETTINGS_PROXY_ADDRESS_ROW => i18n.s().settings_proxy_address,
         settings_page.SETTINGS_RAW_CONFIG_ROW => i18n.s().settings_raw_config,
         settings_page.SETTINGS_RESTORE_DEFAULTS_ROW => i18n.s().settings_restore_defaults,
         else => "",
@@ -274,6 +281,8 @@ fn rowDescription(_: settings_page.Category, row: usize) []const u8 {
         settings_page.SETTINGS_CONTROL_ROW_START + 6 => if (zh) "选择 WispTerm 的界面语言" else "Choose the WispTerm interface language",
         settings_page.SETTINGS_CONTROL_ROW_START + 7 => if (zh) "启动时恢复上次打开的标签页" else "Restore previously open tabs at launch",
         settings_page.SETTINGS_CONTROL_ROW_START + 8 => if (zh) "在合适时建议将工作流沉淀为技能" else "Suggest reusable skills from completed work",
+        settings_page.SETTINGS_SYSTEM_PROXY_ROW => if (zh) "开启后，模型请求走下一行选择的代理" else "Send model requests through the proxy chosen below",
+        settings_page.SETTINGS_PROXY_ADDRESS_ROW => if (zh) "留空使用系统代理，或填写 127.0.0.1:端口" else "Empty uses the system proxy, or set host:port",
         settings_page.SETTINGS_RAW_CONFIG_ROW => if (zh) "在编辑器中打开完整配置文件" else "Open the complete config file in your editor",
         settings_page.SETTINGS_RESTORE_DEFAULTS_ROW => if (zh) "移除自定义设置并恢复默认值" else "Remove custom settings and restore defaults",
         else => "",
