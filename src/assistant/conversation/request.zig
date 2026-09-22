@@ -19,6 +19,8 @@ const ai_chat_types = @import("types.zig");
 const ai_loop_store = @import("../loop/store.zig");
 const platform_agent_prompt = @import("../../platform/agent_prompt.zig");
 const oauth_client = @import("../oauth/client.zig");
+const platform_http = @import("../../platform/http_client.zig");
+const Config = @import("../../config.zig");
 
 const title_log = std.log.scoped(.ai_title);
 
@@ -615,6 +617,62 @@ fn authFailureResult(allocator: std.mem.Allocator, err: anyerror) !ApiResult {
     };
 }
 
+const ProviderProxy = struct {
+    enabled: bool = false,
+    explicit: ?[]u8 = null,
+
+    fn deinit(self: *ProviderProxy, allocator: std.mem.Allocator) void {
+        if (self.explicit) |text| allocator.free(text);
+        self.* = .{};
+    }
+};
+
+fn loadProviderProxy(allocator: std.mem.Allocator) ProviderProxy {
+    var cfg = Config.load(allocator) catch return .{};
+    defer cfg.deinit(allocator);
+    if (!cfg.@"http-use-system-proxy") return .{};
+    const text = std.mem.trim(u8, cfg.@"http-proxy", " \t\r\n");
+    if (text.len == 0) return .{ .enabled = true };
+    const explicit = allocator.dupe(u8, text) catch return .{ .enabled = true };
+    return .{ .enabled = true, .explicit = explicit };
+}
+
+fn providerHeaders(prepared: *const PreparedCall, out: []platform_http.Header) usize {
+    var n: usize = 0;
+    if (n >= out.len) return n;
+    out[n] = .{ .name = "Content-Type", .value = "application/json" };
+    n += 1;
+    if (!prepared.omit_authorization and n < out.len) {
+        out[n] = .{ .name = "Authorization", .value = prepared.bearer };
+        n += 1;
+    }
+    for (prepared.extra[0..prepared.extra_len]) |header| {
+        if (n >= out.len) break;
+        out[n] = header;
+        n += 1;
+    }
+    return n;
+}
+
+fn postViaProxy(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    body: []const u8,
+    prepared: *const PreparedCall,
+    explicit_proxy: ?[]const u8,
+) !platform_http.Response {
+    var headers: [8]platform_http.Header = undefined;
+    const n = providerHeaders(prepared, &headers);
+    return platform_http.fetch(allocator, .{
+        .method = .POST,
+        .url = endpoint,
+        .headers = headers[0..n],
+        .body = body,
+        .timeout_ms = 120_000,
+        .proxy = explicit_proxy,
+    });
+}
+
 fn runChatRequestForMessages(request: *const ChatRequest, messages: []const RequestMessage, include_tools: bool) !ApiResult {
     if (ai_chat.requestCancelled(request)) return error.Canceled;
     const allocator = request.allocator;
@@ -625,6 +683,23 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
 
     const body = try buildRequestJsonForMessages(allocator, request, messages, include_tools);
     defer allocator.free(body);
+
+    var route = loadProviderProxy(allocator);
+    defer route.deinit(allocator);
+    if (route.enabled) {
+        const response = postViaProxy(allocator, endpoint, body, &prepared, route.explicit) catch |err| return networkFailureResult(allocator, endpoint, err);
+        defer allocator.free(response.body);
+        if (ai_chat.requestCancelled(request)) return error.Canceled;
+        if (response.status != 200) {
+            const trimmed = std.mem.trim(u8, response.body, " \t\r\n");
+            if (trimmed.len > 0) return ApiResult{ .content = try allocator.dupe(u8, trimmed), .api_error = true };
+            return ApiResult{ .content = try std.fmt.allocPrint(allocator, "HTTP {d}", .{response.status}), .api_error = true };
+        }
+        return if (request.stream)
+            ai_chat_protocol.parseApiStreamResponse(allocator, response.body)
+        else
+            ai_chat_protocol.parseApiResponse(allocator, response.body, request.protocol);
+    }
 
     var client: std.http.Client = .{
         .allocator = allocator,
@@ -677,6 +752,39 @@ fn runChatRequestStreaming(request: *const ChatRequest) !void {
 
     const body = try buildRequestJson(allocator, request);
     defer allocator.free(body);
+
+    var route = loadProviderProxy(allocator);
+    defer route.deinit(allocator);
+    if (route.enabled) {
+        const response = postViaProxy(allocator, endpoint, body, &prepared, route.explicit) catch |err| {
+            try failStreamNetworkRequest(request, endpoint, "open request", err);
+            return;
+        };
+        defer allocator.free(response.body);
+        if (ai_chat.requestCancelled(request)) return error.Canceled;
+        if (response.status != 200) {
+            const trimmed = std.mem.trim(u8, response.body, " \t\r\n");
+            if (trimmed.len > 0) {
+                ai_chat.failAssistantStream(request.session, null, trimmed);
+            } else {
+                const msg = try std.fmt.allocPrint(allocator, "HTTP {d}", .{response.status});
+                defer allocator.free(msg);
+                ai_chat.failAssistantStream(request.session, null, msg);
+            }
+            return;
+        }
+        const message_idx = try ai_chat.beginAssistantStream(request.session);
+        var usage: ?ApiUsage = null;
+        var first_token_ms: i64 = 0;
+        var lines = std.mem.splitScalar(u8, response.body, '\n');
+        while (lines.next()) |line_raw| {
+            if (ai_chat.requestCancelled(request)) return error.Canceled;
+            const line = std.mem.trimRight(u8, line_raw, "\r");
+            if (try ai_chat.applyApiStreamLineToSession(allocator, request.session, message_idx, line, &usage, &first_token_ms)) break;
+        }
+        ai_chat.finishAssistantStream(request.session, message_idx, request.started_ms, first_token_ms, usage);
+        return;
+    }
 
     var client: std.http.Client = .{
         .allocator = allocator,

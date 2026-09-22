@@ -12,6 +12,9 @@ pub const SETTINGS_CONTROL_ROW_START: usize = 3;
 pub const SHELL_INTEGRATION_ROWS: usize = if (shell_integration.supported) 2 else 0;
 pub const SETTINGS_RAW_CONFIG_ROW: usize = SETTINGS_CONTROL_ROW_START + 9 + SHELL_INTEGRATION_ROWS;
 pub const SETTINGS_RESTORE_DEFAULTS_ROW: usize = SETTINGS_CONTROL_ROW_START + 10 + SHELL_INTEGRATION_ROWS;
+/// Free of the shell-integration / raw-config indices on every OS.
+pub const SETTINGS_SYSTEM_PROXY_ROW: usize = SETTINGS_CONTROL_ROW_START + 13;
+pub const SETTINGS_PROXY_ADDRESS_ROW: usize = SETTINGS_CONTROL_ROW_START + 14;
 
 pub const Category = enum {
     general,
@@ -37,6 +40,8 @@ const APPEARANCE_ROWS = [_]usize{
 };
 const AI_ROWS = [_]usize{
     SETTINGS_CONTROL_ROW_START + 4, // default AI
+    SETTINGS_SYSTEM_PROXY_ROW, // enable provider proxy
+    SETTINGS_PROXY_ADDRESS_ROW, // system proxy or host:port
     SETTINGS_CONTROL_ROW_START + 5, // WeChat direct
     SETTINGS_CONTROL_ROW_START + 8, // distill suggestions
 };
@@ -86,6 +91,9 @@ pub const Action = enum {
     cycle_language,
     toggle_restore_tabs,
     toggle_distill_suggest,
+    toggle_system_proxy,
+    edit_proxy,
+    commit_proxy,
     toggle_start_menu,
     toggle_startup,
     open_raw_config,
@@ -107,15 +115,21 @@ pub const State = struct {
     picker_choices: []const []const u8 = &.{},
     picker_choices_owned: bool = false,
     picker_allocator: ?std.mem.Allocator = null,
+    proxy_editing: bool = false,
+    proxy_draft_invalid: bool = false,
+    proxy_draft_len: usize = 0,
+    proxy_draft: [255]u8 = undefined,
 
     pub fn open(self: *State) void {
         self.closePicker(null);
+        self.endProxyEdit();
         self.visible = true;
         self.selectCategory(.general);
         self.cfg_dirty = true;
     }
 
     pub fn selectCategory(self: *State, category: Category) void {
+        self.endProxyEdit();
         const rows = categoryRows(category);
         if (rows.len == 0) return;
         self.category = category;
@@ -140,6 +154,7 @@ pub const State = struct {
 
     pub fn close(self: *State, allocator: ?std.mem.Allocator) void {
         self.visible = false;
+        self.endProxyEdit();
         self.closePicker(null);
         if (self.cfg_loaded) {
             const alloc = allocator orelse return;
@@ -229,7 +244,56 @@ pub const State = struct {
         return true;
     }
 
+    pub fn beginProxyEdit(self: *State, current: []const u8) void {
+        const trimmed = std.mem.trim(u8, current, " \t\r\n");
+        const n = @min(trimmed.len, self.proxy_draft.len);
+        @memcpy(self.proxy_draft[0..n], trimmed[0..n]);
+        self.proxy_draft_len = n;
+        self.proxy_editing = true;
+        self.proxy_draft_invalid = false;
+    }
+
+    pub fn endProxyEdit(self: *State) void {
+        self.proxy_editing = false;
+        self.proxy_draft_len = 0;
+        self.proxy_draft_invalid = false;
+    }
+
+    pub fn proxyDraft(self: *const State) []const u8 {
+        return self.proxy_draft[0..self.proxy_draft_len];
+    }
+
+    pub fn insertProxyChar(self: *State, cp: u21) bool {
+        if (!self.proxy_editing) return false;
+        if (cp < 33 or cp > 126) return true;
+        const c: u8 = @intCast(cp);
+        if (!proxyAddressChar(c) or self.proxy_draft_len >= self.proxy_draft.len) return true;
+        self.proxy_draft[self.proxy_draft_len] = c;
+        self.proxy_draft_len += 1;
+        self.proxy_draft_invalid = false;
+        return true;
+    }
+
+    pub fn proxyBackspace(self: *State) void {
+        if (self.proxy_draft_len > 0) self.proxy_draft_len -= 1;
+        self.proxy_draft_invalid = false;
+    }
+
     pub fn handleKey(self: *State, ev: input_key.KeyEvent) ?Action {
+        if (self.proxy_editing) {
+            return switch (ev.key) {
+                .escape => blk: {
+                    self.endProxyEdit();
+                    break :blk null;
+                },
+                .enter => .commit_proxy,
+                .backspace, .delete => blk: {
+                    self.proxyBackspace();
+                    break :blk null;
+                },
+                else => null,
+            };
+        }
         if (self.pickerOpen()) {
             return switch (ev.key) {
                 .escape, .arrow_left => .close_picker,
@@ -319,6 +383,8 @@ pub const State = struct {
             6 => .cycle_language,
             7 => .toggle_restore_tabs,
             8 => .toggle_distill_suggest,
+            13 => .toggle_system_proxy,
+            14 => .edit_proxy,
             9 + SHELL_INTEGRATION_ROWS => .open_raw_config,
             10 + SHELL_INTEGRATION_ROWS => .restore_defaults,
             else => null,
@@ -351,6 +417,8 @@ pub const State = struct {
             SETTINGS_CONTROL_ROW_START + 6 => .cycle_language,
             SETTINGS_CONTROL_ROW_START + 7 => .toggle_restore_tabs,
             SETTINGS_CONTROL_ROW_START + 8 => .toggle_distill_suggest,
+            SETTINGS_SYSTEM_PROXY_ROW => .toggle_system_proxy,
+            SETTINGS_PROXY_ADDRESS_ROW => .edit_proxy,
             SETTINGS_CONTROL_ROW_START + 9 + SHELL_INTEGRATION_ROWS => .open_raw_config,
             SETTINGS_CONTROL_ROW_START + 10 + SHELL_INTEGRATION_ROWS => .restore_defaults,
             else => null,
@@ -412,6 +480,27 @@ test "settings page exposes shell integration rows only on Windows" {
     }
 }
 
+fn proxyAddressChar(c: u8) bool {
+    return switch (c) {
+        'a'...'z', 'A'...'Z', '0'...'9', '.', ':', '-', '_', '[', ']', '/' => true,
+        else => false,
+    };
+}
+
+test "settings proxy address accepts host:port and backspace" {
+    var state = State{ .visible = true, .category = .ai, .focus = SETTINGS_PROXY_ADDRESS_ROW };
+    try std.testing.expectEqual(Action.edit_proxy, state.focusPrimaryAction().?);
+    state.beginProxyEdit("127.0.0.1:1");
+    try std.testing.expect(state.insertProxyChar('2'));
+    try std.testing.expect(state.insertProxyChar(' '));
+    try std.testing.expectEqualStrings("127.0.0.1:12", state.proxyDraft());
+    state.proxyBackspace();
+    try std.testing.expectEqualStrings("127.0.0.1:1", state.proxyDraft());
+    try std.testing.expectEqual(Action.commit_proxy, state.handleKey(.{ .key = .enter }).?);
+    try std.testing.expectEqual(@as(?Action, null), state.handleKey(.{ .key = .escape }));
+    try std.testing.expect(!state.proxy_editing);
+}
+
 test "settings page category selection scopes visible rows" {
     var state = State{ .visible = true };
     state.selectCategory(.ai);
@@ -420,7 +509,7 @@ test "settings page category selection scopes visible rows" {
     const scroll = state.firstVisibleRow(2);
 
     try std.testing.expectEqual(Category.ai, state.category);
-    try std.testing.expectEqual(@as(usize, 1), scroll);
+    try std.testing.expectEqual(AI_ROWS.len - 2, scroll);
 }
 
 test "appearance exposes font family before font size" {

@@ -31,6 +31,7 @@ const command_palette_model = @import("../command/palette_model.zig");
 const command_registry = @import("../command/registry.zig");
 const agent_history = @import("../agent/history.zig");
 const platform_dirs = @import("../platform/dirs.zig");
+const platform_http = @import("../platform/http_client.zig");
 const platform_open_url = @import("../platform/open_url.zig");
 const platform_pty_command = @import("../platform/pty_command.zig");
 const shell_integration = @import("../platform/shell_integration.zig");
@@ -6901,6 +6902,22 @@ pub fn settingsPageHandleKey(ev: input_key.KeyEvent) AppWindow.UiEffect {
     return .repaint;
 }
 
+pub fn settingsPageInsertChar(cp: u21) bool {
+    if (!settingsPageVisible()) return false;
+    return settingsState().insertProxyChar(cp);
+}
+
+fn saveProxyDraft(allocator: std.mem.Allocator) void {
+    const state = settingsState();
+    const draft = state.proxyDraft();
+    if (draft.len > 0 and platform_http.parseProxy(draft) == null) {
+        state.proxy_draft_invalid = true;
+        return;
+    }
+    Config.setConfigValue(allocator, "http-proxy", draft) catch return;
+    state.endProxyEdit();
+}
+
 pub fn settingsPageExecuteAt(xpos: f64, ypos: f64, window_height: f32, top_offset: f32, content_x: f32, content_width: f32) bool {
     const action = settingsHitTest(xpos, ypos, window_height, top_offset, content_x, content_width) orelse return false;
     executeSettingsAction(action);
@@ -6938,6 +6955,10 @@ fn settingsHitTest(xpos: f64, ypos: f64, window_height: f32, top_offset: f32, co
 }
 
 fn executeSettingsAction(action: SettingsAction) void {
+    if (settingsState().proxy_editing and action != .commit_proxy and action != .edit_proxy) {
+        if (AppWindow.g_allocator) |allocator| saveProxyDraft(allocator);
+        if (settingsState().proxy_draft_invalid) settingsState().endProxyEdit();
+    }
     switch (action) {
         .select_general => {
             settingsState().closePicker(AppWindow.g_allocator);
@@ -6993,6 +7014,9 @@ fn executeSettingsAction(action: SettingsAction) void {
         .cycle_language => Config.setConfigValue(allocator, "language", nextLanguageSetting(cfg.language)) catch {},
         .toggle_restore_tabs => Config.setConfigValue(allocator, "restore-tabs-on-startup", if (cfg.@"restore-tabs-on-startup") "false" else "true") catch {},
         .toggle_distill_suggest => Config.setConfigValue(allocator, "ai-distill-suggest", if (cfg.@"ai-distill-suggest") "false" else "true") catch {},
+        .toggle_system_proxy => Config.setConfigValue(allocator, "http-use-system-proxy", if (cfg.@"http-use-system-proxy") "false" else "true") catch {},
+        .edit_proxy => if (settingsState().proxy_editing) saveProxyDraft(allocator) else settingsState().beginProxyEdit(cfg.@"http-proxy"),
+        .commit_proxy => saveProxyDraft(allocator),
         .toggle_start_menu => shell_integration.setEnabled(allocator, .start_menu, !shell_integration.isEnabled(allocator, .start_menu)) catch {},
         .toggle_startup => shell_integration.setEnabled(allocator, .startup, !shell_integration.isEnabled(allocator, .startup)) catch {},
         .open_raw_config => Config.openConfigInEditor(allocator),
@@ -7121,6 +7145,16 @@ fn boolText(value: bool) []const u8 {
     return if (value) i18n.s().settings_value_on else i18n.s().settings_value_off;
 }
 
+fn proxyAddressText(state: *const settings_page.State, configured: []const u8, buf: []u8) []const u8 {
+    if (state.proxy_editing) {
+        const draft = state.proxyDraft();
+        if (draft.len == 0) return if (i18n.lang() == .zh_CN) "输入地址" else "type address";
+        return std.fmt.bufPrint(buf, "{s}|", .{draft}) catch draft;
+    }
+    if (std.mem.trim(u8, configured, " \t\r\n").len == 0) return i18n.s().settings_proxy_system;
+    return configured;
+}
+
 /// Config value string for the next language in the cycle (auto → en → zh-CN → auto).
 fn nextLanguageSetting(setting: i18n.LanguageSetting) []const u8 {
     return switch (setting) {
@@ -7185,6 +7219,8 @@ pub fn renderSettingsPage(window_height: f32, top_offset: f32, content_x: f32, c
                 SETTINGS_CONTROL_ROW_START + 6 => languageSettingText(cfg.language),
                 SETTINGS_CONTROL_ROW_START + 7 => boolText(cfg.@"restore-tabs-on-startup"),
                 SETTINGS_CONTROL_ROW_START + 8 => boolText(cfg.@"ai-distill-suggest"),
+                settings_page.SETTINGS_SYSTEM_PROXY_ROW => boolText(cfg.@"http-use-system-proxy"),
+                settings_page.SETTINGS_PROXY_ADDRESS_ROW => proxyAddressText(state, cfg.@"http-proxy", buf),
                 settings_page.SETTINGS_RAW_CONFIG_ROW => i18n.s().settings_value_open,
                 settings_page.SETTINGS_RESTORE_DEFAULTS_ROW => "Enter",
                 else => "",
