@@ -4030,13 +4030,6 @@ pub fn forkActiveAiChatSession(fork_at_user_point: ?usize) void {
 
 fn forkAiChatSession(session: *ai_chat.Session, fork_at_user_point: ?usize) void {
     const allocator = g_allocator orelse return;
-    // An ACP session's context lives in the external agent process; copying the
-    // local transcript would not fork that state, so refuse up front.
-    if (session.acp_command.len > 0) {
-        overlays.showStatusToast("ACP sessions cannot be forked");
-        markUiDirty();
-        return;
-    }
     if (session.request_inflight) {
         overlays.showStatusToast("Wait for the current reply to finish, then fork");
         markUiDirty();
@@ -4920,10 +4913,9 @@ pub fn spawnAiChatTab(
     agent_val: []const u8,
     max_tokens: u32,
     vision_val: []const u8,
-    command: []const u8,
 ) bool {
     const allocator = g_allocator orelse return false;
-    if (!tab.spawnAiChatTab(allocator, name, base_url, api_key, model, protocol, system_prompt, thinking, reasoning_effort, stream_val, agent_val, max_tokens, vision_val, command)) return false;
+    if (!tab.spawnAiChatTab(allocator, name, base_url, api_key, model, protocol, system_prompt, thinking, reasoning_effort, stream_val, agent_val, max_tokens, vision_val)) return false;
     clearUiStateOnTabChange();
     return true;
 }

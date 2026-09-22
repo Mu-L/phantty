@@ -12,10 +12,10 @@ Windows, `~/Library/Application Support/wispterm/ai_profiles` on macOS, or
 on Linux — with fields hex encoded on disk.
 
 Copilot can speak OpenAI-compatible Chat Completions, the OpenAI Responses API,
-the Anthropic Messages API, or hand the whole conversation to an external agent
-over ACP (see [External Agents via ACP](#external-agents-via-acp)). Set the
+the Anthropic Messages API, or a subscription sign-in for ChatGPT Codex, Kimi
+Code, and xAI (see [Subscription sign-in](#subscription-sign-in)). Set the
 profile Protocol field to `chat_completions` (default), `responses`,
-`anthropic`, or `acp`:
+`anthropic`, `codex`, `kimi`, or `xai`:
 
 - `responses` profiles should use a base URL such as `https://api.openai.com/v1`
   or a full endpoint ending in `/responses`.
@@ -68,54 +68,25 @@ and collapses the old turns into a `Conversation summary` card. You can keep
 typing while the summary runs; if the summary request fails, WispTerm keeps the
 full raw history instead.
 
-## External Agents via ACP
+## Subscription sign-in
 
-Instead of calling a model API directly, an AI profile can launch an external
-coding agent (Claude Code, Codex, or any other [ACP](https://agentclientprotocol.com)
-server) as a subprocess and let it drive the conversation. WispTerm speaks the
-Agent Client Protocol over the agent's stdio: your messages become
-`session/prompt` turns, the agent's streamed replies and tool calls render in
-the normal chat transcript, and the agent process is reused across turns within
-the session.
+`codex`, `kimi`, and `xai` use a subscription instead of a pay-per-token API key.
+Cycle Protocol onto one of them and the form fills a default base URL and model
+(you can still edit the model). Focus **Sign in** and press Enter. WispTerm
+opens the provider's device-login page and shows a one-time code; approve it in
+the browser. Tokens are stored in `oauth.json` next to `ai_profiles` (mode
+`0600` where the filesystem supports it) and refresh on their own.
 
-### Creating an ACP profile
+| Protocol | Subscription | Default endpoint | Request shape |
+|----------|----------------|------------------|---------------|
+| `codex` | ChatGPT Plus or Pro | `https://chatgpt.com/backend-api` | Codex responses (`/codex/responses`) |
+| `kimi` | Kimi Code | `https://api.kimi.com/coding` | Anthropic Messages, `Authorization: Bearer` |
+| `xai` | SuperGrok or X Premium | `https://api.x.ai/v1` | OpenAI Responses |
 
-Open the AI profile form (session launcher → AI settings) and cycle the
-`Protocol` field to `acp`. An ACP profile only needs three fields:
-
-- **Profile name** — any label (falls back to the command if left empty).
-- **Protocol** — `acp`.
-- **Command** — the agent launch command, run through your shell.
-
-Base URL, API key, and model are not used — the form shows
-`(not needed for ACP)` in those fields and they can stay empty. The agent
-process brings its own model access and authentication (e.g. Claude Code uses
-your existing `claude` login).
-
-Two verified adapter commands:
-
-| Agent | Command |
-|-------|---------|
-| Claude Code | `npx -y @zed-industries/claude-code-acp` |
-| Codex | `npx -y @zed-industries/codex-acp` |
-
-Landing on `acp` in the Protocol field prefills the Claude Code command if the
-Command field is empty.
-
-### Permissions
-
-When the agent asks for permission (`session/request_permission`, e.g. before
-editing a file or running a command), WispTerm shows the question as a blocking
-prompt in the chat — pick an option to let the agent continue. Stopping the
-turn cancels the pending prompt.
-
-### Terminal capability
-
-On macOS and Linux, WispTerm advertises the ACP `terminal/*` capability: when
-the agent runs a command, it executes in a real WispTerm pane you can watch and
-scroll. On Windows this capability is currently disabled (agents fall back to
-their own command execution) until shell-argument escaping for `cmd.exe` is
-implemented.
+Codex requires the subscription sign-in. Kimi and xAI use the stored subscription
+when it exists, and otherwise send the profile API key as a bearer token.
+`KIMI_CODE_OAUTH_HOST` (or `KIMI_OAUTH_HOST`) overrides the Kimi login host.
+Streaming stays off for `kimi`, the same as `anthropic`.
 
 ## Sessions
 

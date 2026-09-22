@@ -18,6 +18,7 @@ const pubmed = @import("../../research/pubmed.zig");
 const ai_chat_types = @import("types.zig");
 const ai_loop_store = @import("../loop/store.zig");
 const platform_agent_prompt = @import("../../platform/agent_prompt.zig");
+const oauth_client = @import("../oauth/client.zig");
 
 const title_log = std.log.scoped(.ai_title);
 
@@ -564,17 +565,66 @@ fn oneShotRequestProtocol(session: *const Session) ApiProtocol {
     return session.protocol;
 }
 
+const PreparedCall = struct {
+    access: oauth_client.Access,
+    bearer: []u8,
+    extra: [4]std.http.Header = undefined,
+    extra_len: usize = 0,
+    omit_authorization: bool = false,
+
+    fn deinit(self: *PreparedCall, allocator: std.mem.Allocator) void {
+        allocator.free(self.bearer);
+        self.access.deinit(allocator);
+    }
+};
+
+fn prepareCall(request: *const ChatRequest) !PreparedCall {
+    const allocator = request.allocator;
+    const access = oauth_client.resolve(allocator, request.protocol, request.api_key) catch |err| switch (err) {
+        error.NotSignedIn, error.RefreshFailed => return err,
+        else => return error.RefreshFailed,
+    };
+    errdefer access.deinit(allocator);
+    const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{access.token});
+    var prepared = PreparedCall{ .access = access, .bearer = bearer };
+    switch (request.protocol) {
+        .anthropic => {
+            prepared.omit_authorization = true;
+            prepared.extra[0] = .{ .name = "x-api-key", .value = access.token };
+            prepared.extra[1] = .{ .name = "anthropic-version", .value = "2023-06-01" };
+            prepared.extra_len = 2;
+        },
+        .kimi => {
+            prepared.extra[0] = .{ .name = "anthropic-version", .value = "2023-06-01" };
+            prepared.extra_len = 1;
+        },
+        .codex => {
+            prepared.extra[0] = .{ .name = "chatgpt-account-id", .value = access.account_id };
+            prepared.extra[1] = .{ .name = "originator", .value = "wispterm" };
+            prepared.extra_len = 2;
+        },
+        else => {},
+    }
+    return prepared;
+}
+
+fn authFailureResult(allocator: std.mem.Allocator, err: anyerror) !ApiResult {
+    return .{
+        .content = try allocator.dupe(u8, oauth_client.failureText(err)),
+        .api_error = true,
+    };
+}
+
 fn runChatRequestForMessages(request: *const ChatRequest, messages: []const RequestMessage, include_tools: bool) !ApiResult {
     if (ai_chat.requestCancelled(request)) return error.Canceled;
     const allocator = request.allocator;
+    var prepared = prepareCall(request) catch |err| return authFailureResult(allocator, err);
+    defer prepared.deinit(allocator);
     const endpoint = try ai_chat_protocol.apiEndpoint(allocator, request.base_url, request.protocol);
     defer allocator.free(endpoint);
 
     const body = try buildRequestJsonForMessages(allocator, request, messages, include_tools);
     defer allocator.free(body);
-
-    const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{request.api_key});
-    defer allocator.free(bearer);
 
     var client: std.http.Client = .{
         .allocator = allocator,
@@ -585,20 +635,15 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
     var resp_buf: std.Io.Writer.Allocating = .init(allocator);
     defer resp_buf.deinit();
 
-    const is_anthropic = request.protocol == .anthropic;
-    const anthropic_headers = [_]std.http.Header{
-        .{ .name = "x-api-key", .value = request.api_key },
-        .{ .name = "anthropic-version", .value = "2023-06-01" },
-    };
     const result = client.fetch(.{
         .location = .{ .url = endpoint },
         .method = .POST,
         .payload = body,
         .headers = .{
             .content_type = .{ .override = "application/json" },
-            .authorization = if (is_anthropic) .omit else .{ .override = bearer },
+            .authorization = if (prepared.omit_authorization) .omit else .{ .override = prepared.bearer },
         },
-        .extra_headers = if (is_anthropic) &anthropic_headers else &.{},
+        .extra_headers = prepared.extra[0..prepared.extra_len],
         .response_writer = &resp_buf.writer,
     }) catch |err| return networkFailureResult(allocator, endpoint, err);
     if (ai_chat.requestCancelled(request)) return error.Canceled;
@@ -621,14 +666,17 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
 fn runChatRequestStreaming(request: *const ChatRequest) !void {
     if (ai_chat.requestCancelled(request)) return error.Canceled;
     const allocator = request.allocator;
+    var prepared = prepareCall(request) catch |err| {
+        const text = oauth_client.failureText(err);
+        ai_chat.failAssistantStream(request.session, null, text);
+        return;
+    };
+    defer prepared.deinit(allocator);
     const endpoint = try ai_chat_protocol.apiEndpoint(allocator, request.base_url, request.protocol);
     defer allocator.free(endpoint);
 
     const body = try buildRequestJson(allocator, request);
     defer allocator.free(body);
-
-    const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{request.api_key});
-    defer allocator.free(bearer);
 
     var client: std.http.Client = .{
         .allocator = allocator,
@@ -636,18 +684,13 @@ fn runChatRequestStreaming(request: *const ChatRequest) !void {
     };
     defer client.deinit();
 
-    const is_anthropic = request.protocol == .anthropic;
-    const anthropic_headers = [_]std.http.Header{
-        .{ .name = "x-api-key", .value = request.api_key },
-        .{ .name = "anthropic-version", .value = "2023-06-01" },
-    };
     const uri = try std.Uri.parse(endpoint);
     var req = client.request(.POST, uri, .{
         .headers = .{
             .content_type = .{ .override = "application/json" },
-            .authorization = if (is_anthropic) .omit else .{ .override = bearer },
+            .authorization = if (prepared.omit_authorization) .omit else .{ .override = prepared.bearer },
         },
-        .extra_headers = if (is_anthropic) &anthropic_headers else &.{},
+        .extra_headers = prepared.extra[0..prepared.extra_len],
         .keep_alive = false,
     }) catch |err| {
         try failStreamNetworkRequest(request, endpoint, "open request", err);

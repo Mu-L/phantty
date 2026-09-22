@@ -27,7 +27,6 @@ comptime {
         _ = @import("assistant/conversation/session_fork_test.zig");
         _ = @import("assistant/conversation/session_btw_test.zig");
         _ = @import("assistant/conversation/request.zig");
-        _ = @import("assistant/conversation/acp_turn.zig");
         _ = @import("assistant/conversation/model_switch.zig");
         _ = @import("agent_tools/mod.zig");
         _ = @import("assistant/conversation/skills.zig");

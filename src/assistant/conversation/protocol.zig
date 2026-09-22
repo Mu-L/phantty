@@ -24,7 +24,12 @@ pub const ApiProtocol = enum {
     chat_completions,
     responses,
     anthropic,
-    acp,
+    /// ChatGPT Plus/Pro subscription. Wire format is the Codex responses API.
+    codex,
+    /// Kimi Code subscription. Wire format is the Anthropic Messages API.
+    kimi,
+    /// SuperGrok / X Premium subscription. Wire format is the OpenAI Responses API.
+    xai,
 
     pub fn parse(value: []const u8) ApiProtocol {
         const trimmed = std.mem.trim(u8, value, " \t\r\n");
@@ -40,7 +45,11 @@ pub const ApiProtocol = enum {
         {
             return .anthropic;
         }
-        if (std.ascii.eqlIgnoreCase(trimmed, "acp")) return .acp;
+        if (std.ascii.eqlIgnoreCase(trimmed, "codex") or std.ascii.eqlIgnoreCase(trimmed, "openai-codex")) return .codex;
+        if (std.ascii.eqlIgnoreCase(trimmed, "kimi") or std.ascii.eqlIgnoreCase(trimmed, "kimi-coding")) return .kimi;
+        if (std.ascii.eqlIgnoreCase(trimmed, "xai") or std.ascii.eqlIgnoreCase(trimmed, "grok")) return .xai;
+        // Legacy ACP profiles no longer launch a subprocess. They parse as the
+        // default HTTP protocol so the saved line still loads.
         return .chat_completions;
     }
 
@@ -49,8 +58,48 @@ pub const ApiProtocol = enum {
             .chat_completions => DEFAULT_PROTOCOL,
             .responses => "responses",
             .anthropic => "anthropic",
-            .acp => "acp",
+            .codex => "codex",
+            .kimi => "kimi",
+            .xai => "xai",
         };
+    }
+
+    pub fn isSubscription(self: ApiProtocol) bool {
+        return switch (self) {
+            .codex, .kimi, .xai => true,
+            else => false,
+        };
+    }
+
+    /// Fixed base URL and model filled in when the profile form lands on a
+    /// subscription protocol and the current values are still the defaults.
+    pub fn subscriptionPreset(self: ApiProtocol) ?struct { base_url: []const u8, model: []const u8 } {
+        return switch (self) {
+            .codex => .{ .base_url = "https://chatgpt.com/backend-api", .model = "gpt-5.4" },
+            .kimi => .{ .base_url = "https://api.kimi.com/coding", .model = "kimi-for-coding" },
+            .xai => .{ .base_url = "https://api.x.ai/v1", .model = "grok-4" },
+            else => null,
+        };
+    }
+
+    pub fn isSubscriptionBaseUrl(value: []const u8) bool {
+        inline for (std.meta.fields(ApiProtocol)) |field| {
+            const protocol: ApiProtocol = @enumFromInt(field.value);
+            if (protocol.subscriptionPreset()) |preset| {
+                if (std.mem.eql(u8, value, preset.base_url)) return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn isSubscriptionModel(value: []const u8) bool {
+        inline for (std.meta.fields(ApiProtocol)) |field| {
+            const protocol: ApiProtocol = @enumFromInt(field.value);
+            if (protocol.subscriptionPreset()) |preset| {
+                if (std.mem.eql(u8, value, preset.model)) return true;
+            }
+        }
+        return false;
     }
 
     /// Cycle to the next/previous valid protocol (wraps). Used by the AI profile
@@ -60,39 +109,50 @@ pub const ApiProtocol = enum {
             return switch (self) {
                 .chat_completions => .responses,
                 .responses => .anthropic,
-                .anthropic => .acp,
-                .acp => .chat_completions,
+                .anthropic => .codex,
+                .codex => .kimi,
+                .kimi => .xai,
+                .xai => .chat_completions,
             };
         }
         return switch (self) {
-            .chat_completions => .acp,
+            .chat_completions => .xai,
             .responses => .chat_completions,
             .anthropic => .responses,
-            .acp => .anthropic,
+            .codex => .anthropic,
+            .kimi => .codex,
+            .xai => .kimi,
         };
     }
 };
 
 test "ApiProtocol.cycle toggles forward and backward through the valid set, wrapping" {
-    // forward
     try std.testing.expectEqual(ApiProtocol.responses, ApiProtocol.chat_completions.cycle(true));
     try std.testing.expectEqual(ApiProtocol.anthropic, ApiProtocol.responses.cycle(true));
-    try std.testing.expectEqual(ApiProtocol.acp, ApiProtocol.anthropic.cycle(true));
-    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.acp.cycle(true));
-    // backward
-    try std.testing.expectEqual(ApiProtocol.acp, ApiProtocol.chat_completions.cycle(false));
+    try std.testing.expectEqual(ApiProtocol.codex, ApiProtocol.anthropic.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.kimi, ApiProtocol.codex.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.kimi.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.xai.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.chat_completions.cycle(false));
     try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.responses.cycle(false));
-    try std.testing.expectEqual(ApiProtocol.responses, ApiProtocol.anthropic.cycle(false));
-    try std.testing.expectEqual(ApiProtocol.anthropic, ApiProtocol.acp.cycle(false));
-    // a full forward loop returns to start
-    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.chat_completions.cycle(true).cycle(true).cycle(true).cycle(true));
+    try std.testing.expectEqual(ApiProtocol.kimi, ApiProtocol.xai.cycle(false));
+    var cursor = ApiProtocol.chat_completions;
+    for (0..6) |_| cursor = cursor.cycle(true);
+    try std.testing.expectEqual(ApiProtocol.chat_completions, cursor);
 }
 
-test "ApiProtocol parses and cycles acp" {
-    try std.testing.expectEqual(ApiProtocol.acp, ApiProtocol.parse("acp"));
-    try std.testing.expectEqualStrings("acp", ApiProtocol.acp.name());
-    try std.testing.expectEqual(ApiProtocol.acp, ApiProtocol.anthropic.cycle(true));
-    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.acp.cycle(true));
+test "subscription protocols parse and legacy acp does not" {
+    try std.testing.expectEqual(ApiProtocol.codex, ApiProtocol.parse("openai-codex"));
+    try std.testing.expectEqual(ApiProtocol.kimi, ApiProtocol.parse("kimi-coding"));
+    try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.parse("grok"));
+    try std.testing.expectEqualStrings("codex", ApiProtocol.codex.name());
+    try std.testing.expect(ApiProtocol.kimi.isSubscription());
+    try std.testing.expect(!ApiProtocol.responses.isSubscription());
+    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.parse("acp"));
+    const preset = ApiProtocol.xai.subscriptionPreset().?;
+    try std.testing.expectEqualStrings("https://api.x.ai/v1", preset.base_url);
+    try std.testing.expect(ApiProtocol.isSubscriptionBaseUrl("https://chatgpt.com/backend-api"));
+    try std.testing.expect(ApiProtocol.isSubscriptionModel("kimi-for-coding"));
 }
 
 pub const Role = enum {
@@ -264,10 +324,9 @@ pub const RequestParams = struct {
 
 pub fn buildRequestJson(allocator: std.mem.Allocator, params: RequestParams, messages: []const RequestMessage, include_tools: bool) ![]u8 {
     return switch (params.protocol) {
-        // .acp never reaches HTTP request building; harmless defensive default.
-        .chat_completions, .acp => buildChatCompletionsRequestJsonForMessages(allocator, params, messages, include_tools),
-        .responses => buildResponsesRequestJsonForMessages(allocator, params, messages, include_tools),
-        .anthropic => buildAnthropicRequestJsonForMessages(allocator, params, messages, include_tools),
+        .chat_completions => buildChatCompletionsRequestJsonForMessages(allocator, params, messages, include_tools),
+        .responses, .codex, .xai => buildResponsesRequestJsonForMessages(allocator, params, messages, include_tools),
+        .anthropic, .kimi => buildAnthropicRequestJsonForMessages(allocator, params, messages, include_tools),
     };
 }
 
@@ -325,10 +384,10 @@ pub fn isAnthropicBaseUrl(base_url: []const u8) bool {
 
 pub fn apiEndpoint(allocator: std.mem.Allocator, base_url_raw: []const u8, protocol: ApiProtocol) ![]u8 {
     return switch (protocol) {
-        // .acp never reaches HTTP endpoints; harmless defensive default.
-        .chat_completions, .acp => chatEndpoint(allocator, base_url_raw),
-        .responses => responsesEndpoint(allocator, base_url_raw),
-        .anthropic => messagesEndpoint(allocator, base_url_raw),
+        .chat_completions => chatEndpoint(allocator, base_url_raw),
+        .responses, .xai => responsesEndpoint(allocator, base_url_raw),
+        .codex => endpointWithSuffix(allocator, base_url_raw, "/codex/responses"),
+        .anthropic, .kimi => messagesEndpoint(allocator, base_url_raw),
     };
 }
 
@@ -982,7 +1041,7 @@ pub fn parseApiResponse(allocator: std.mem.Allocator, body: []const u8, protocol
     const obj = root.object;
 
     if (try parseApiErrorResult(allocator, root)) |result| return result;
-    if (protocol == .anthropic) return parseAnthropicResponse(allocator, root);
+    if (protocol == .anthropic or protocol == .kimi) return parseAnthropicResponse(allocator, root);
     if (obj.get("choices") != null) return parseChatCompletionsResponse(allocator, root);
     if (obj.get("output") != null or obj.get("output_text") != null) return parseResponsesResponse(allocator, root);
     return error.MissingChoices;

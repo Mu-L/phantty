@@ -382,8 +382,8 @@ test {
     _ = @import("assistant/conversation/composer.zig");
     _ = @import("composer_detail_wrap.zig");
     _ = @import("assistant/conversation/presentation.zig");
-    _ = @import("acp/schema.zig");
-    _ = @import("acp/client.zig");
+    _ = @import("assistant/oauth/codec.zig");
+    _ = @import("assistant/oauth/store.zig");
     _ = @import("agent_tools/args.zig");
     _ = @import("agent_tools/mod.zig");
     _ = @import("agent_tools/mcp_config.zig");
