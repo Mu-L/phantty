@@ -12,6 +12,8 @@ pub const Row = struct {
     phase: Phase = .idle,
     code: [48]u8 = undefined,
     code_len: usize = 0,
+    detail: [96]u8 = undefined,
+    detail_len: usize = 0,
     has_credential: bool = false,
 };
 
@@ -30,6 +32,8 @@ var g_provider: codec.Provider = .codex;
 var g_phase: Phase = .idle;
 var g_code: [48]u8 = undefined;
 var g_code_len: usize = 0;
+var g_detail: [96]u8 = undefined;
+var g_detail_len: usize = 0;
 
 pub fn row(provider: codec.Provider) Row {
     g_lock.lock();
@@ -43,6 +47,8 @@ pub fn row(provider: codec.Provider) Row {
     out.phase = g_phase;
     out.code_len = @min(g_code_len, out.code.len);
     @memcpy(out.code[0..out.code_len], g_code[0..out.code_len]);
+    out.detail_len = @min(g_detail_len, out.detail.len);
+    @memcpy(out.detail[0..out.detail_len], g_detail[0..out.detail_len]);
     if (out.phase == .done) out.has_credential = true;
     return out;
 }
@@ -59,6 +65,7 @@ pub fn start(provider: codec.Provider, wake: *const fn () void, open: *const fn 
     g_provider = provider;
     g_phase = .waiting;
     g_code_len = 0;
+    g_detail_len = 0;
     const generation = g_generation;
     g_lock.unlock();
 
@@ -90,6 +97,7 @@ fn worker(job: *Job) void {
         .ctx = job,
         .show = show,
         .cancelled = cancelled,
+        .note = note,
     };
     const cred = client.login(std.heap.page_allocator, job.provider, prompt) catch |err| {
         if (err == error.Canceled or cancelled(job)) {
@@ -123,6 +131,15 @@ fn show(ctx: *anyopaque, url: []const u8, user_code: []const u8) void {
     job.wake();
 }
 
+fn note(ctx: *anyopaque, message: []const u8) void {
+    const job: *Job = @ptrCast(@alignCast(ctx));
+    g_lock.lock();
+    defer g_lock.unlock();
+    if (job.generation != g_generation) return;
+    g_detail_len = @min(message.len, g_detail.len);
+    @memcpy(g_detail[0..g_detail_len], message[0..g_detail_len]);
+}
+
 fn cancelled(ctx: *anyopaque) bool {
     const job: *Job = @ptrCast(@alignCast(ctx));
     g_lock.lock();
@@ -138,4 +155,5 @@ fn finish(phase: Phase, provider: codec.Provider, generation: u64) void {
     g_provider = provider;
     g_phase = phase;
     if (phase != .waiting) g_code_len = 0;
+    if (phase != .failed) g_detail_len = 0;
 }

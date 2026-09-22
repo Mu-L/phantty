@@ -384,6 +384,7 @@ test {
     _ = @import("assistant/conversation/presentation.zig");
     _ = @import("assistant/oauth/codec.zig");
     _ = @import("assistant/oauth/store.zig");
+    _ = @import("assistant/oauth/client.zig");
     _ = @import("agent_tools/args.zig");
     _ = @import("agent_tools/mod.zig");
     _ = @import("agent_tools/mcp_config.zig");

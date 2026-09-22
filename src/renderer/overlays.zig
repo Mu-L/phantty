@@ -5195,7 +5195,7 @@ fn oauthOpen(url: []const u8) void {
 fn startSubscriptionSignIn() void {
     const provider = oauth_clientProvider() orelse return;
     if (!oauth_login.start(provider, oauthWake, oauthOpen)) {
-        showStatusToast("Sign-in already running");
+        showStatusToast(i18n.s().sl_ai_oauth_busy);
     }
 }
 
@@ -5211,6 +5211,10 @@ fn signInRowDisplay() []const u8 {
     const status = oauth_login.row(provider);
     if (status.phase == .waiting and status.code_len > 0) {
         return std.fmt.bufPrint(&S.buf, "{s}  {s}", .{ status.code[0..status.code_len], i18n.s().sl_ai_oauth_waiting }) catch i18n.s().sl_ai_oauth_waiting;
+    }
+    if (status.phase == .waiting) return i18n.s().sl_ai_oauth_connecting;
+    if (status.phase == .failed and status.detail_len > 0) {
+        return std.fmt.bufPrint(&S.buf, "{s} {s}", .{ i18n.s().sl_ai_oauth_failed, status.detail[0..status.detail_len] }) catch i18n.s().sl_ai_oauth_failed;
     }
     if (status.phase == .failed) return i18n.s().sl_ai_oauth_failed;
     if (status.has_credential or status.phase == .done) return i18n.s().sl_ai_oauth_signed_in;
