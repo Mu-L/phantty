@@ -5645,7 +5645,11 @@ fn aiProfileInputsValid(protocol: []const u8, base_url: []const u8, model: []con
 }
 
 test "aiProfileInputsValid requires an http base url and a model" {
-    try std.testing.expect(!aiProfileInputsValid("codex", "", "gpt", ));
+    try std.testing.expect(!aiProfileInputsValid(
+        "codex",
+        "",
+        "gpt",
+    ));
     try std.testing.expect(!aiProfileInputsValid("", "api.example.com", "gpt"));
     try std.testing.expect(aiProfileInputsValid("kimi", "https://api.kimi.com/coding", "kimi-for-coding"));
 }
