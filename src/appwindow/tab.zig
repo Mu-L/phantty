@@ -133,7 +133,7 @@ pub const TabState = struct {
             return session.tabTitle();
         }
         if (self.kind == .memory_center) {
-            return "Memory Center";
+            return i18n.s().memory_center_title;
         }
         if (self.kind == .conversation_center) {
             return i18n.s().conversation_center_title;

@@ -96,6 +96,8 @@ pub const Strings = struct {
     sl_ai_agent: []const u8,
     sl_sessions: []const u8,
     sl_sessions_detail: []const u8,
+    sl_memory_detail: []const u8,
+    sl_settings_detail: []const u8,
     sl_skill_center: []const u8,
     sl_skill_center_detail: []const u8,
     pf_title: []const u8,
@@ -421,6 +423,8 @@ const en = Strings{
     .sl_ai_agent = "Copilot",
     .sl_sessions = "Sessions",
     .sl_sessions_detail = "Browse Codex / Claude Code sessions",
+    .sl_memory_detail = "Facts and digests",
+    .sl_settings_detail = "Interface and config",
     .sl_skill_center = "Skill Center",
     .sl_skill_center_detail = "Manage Claude Code / Codex skills and local executable tools",
     .pf_title = "Port Forwarding",
@@ -736,6 +740,8 @@ const zh_CN = Strings{
     .sl_ai_agent = "副驾",
     .sl_sessions = "会话",
     .sl_sessions_detail = "浏览 Codex / Claude Code 会话",
+    .sl_memory_detail = "事实与摘要",
+    .sl_settings_detail = "界面与配置",
     .sl_skill_center = "技能中心",
     .sl_skill_center_detail = "管理 Claude Code / Codex 技能和本地可执行工具",
     .pf_title = "端口转发",
@@ -1145,7 +1151,7 @@ pub fn commandTitle(action: CommandAction) ?[]const u8 {
 pub fn commandDetail(action: CommandAction) ?[]const u8 {
     if (active_lang != .zh_CN) return null;
     return switch (action) {
-        .new_tab => "选择 Shell、SSH、WSL、副驾 或 会话",
+        .new_tab => "选择 Shell、SSH、WSL、副驾、会话、端口转发、记忆中心或设置",
         .load_openssh_config => "把 ~/.ssh/config 导入为 SSH profile",
         .new_agent => "用默认 AI 配置打开一个新的副驾标签页",
         .toggle_ai_copilot => "在当前终端上打开或关闭 Copilot 侧栏",
