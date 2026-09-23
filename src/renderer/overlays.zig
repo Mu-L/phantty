@@ -2689,6 +2689,9 @@ const SessionAction = enum {
     wsl,
     ai_chat,
     ai_history,
+    port_forwarding,
+    memory_center,
+    settings,
     ai_history_local,
     ai_history_wsl,
     ai_history_ssh,
@@ -3459,6 +3462,9 @@ pub fn sessionLauncherExecuteAt(xpos: f64, ypos: f64, window_width: f32, window_
         .wsl => openWslSession(),
         .ai_chat => openDefaultAiSession(),
         .ai_history => openAiHistorySourcePicker(),
+        .port_forwarding => openPortForwardingPage(),
+        .memory_center => openMemoryCenterPage(),
+        .settings => settingsPageOpen(),
         .ai_history_local => openLocalAiHistorySession(),
         .ai_history_wsl => openWslAiHistorySession(),
         .ai_history_ssh => openAiHistorySshPicker(),
@@ -3552,25 +3558,45 @@ fn runAiHistorySourceRow(row: usize) void {
     }
 }
 
+fn sessionLauncherActionForRow(row: usize) ?SessionAction {
+    if (row >= platform_pty_command.sessionLauncherRowCount()) return null;
+    if (row == 0) return .local_shell;
+    if (row == 1) return .ssh;
+    if (row == platform_pty_command.sessionLauncherTmuxRow()) return .tmux;
+    if (platform_pty_command.sessionLauncherWslRow()) |wsl_row| {
+        if (row == wsl_row) return .wsl;
+    }
+    if (row == platform_pty_command.sessionLauncherAiAgentRow()) return .ai_chat;
+    if (row == platform_pty_command.sessionLauncherAiHistoryRow()) return .ai_history;
+    if (row == platform_pty_command.sessionLauncherPortForwardRow()) return .port_forwarding;
+    if (row == platform_pty_command.sessionLauncherMemoryCenterRow()) return .memory_center;
+    if (row == platform_pty_command.sessionLauncherSettingsRow()) return .settings;
+    return null;
+}
+
 fn runSessionLauncherRow(row: usize) void {
-    if (row == 0) {
-        openLocalShellSession();
-    } else if (row == 1) {
-        openSshList();
-    } else if (row == platform_pty_command.sessionLauncherTmuxRow()) {
-        openTmuxSshPicker();
-        return;
-    } else if (platform_pty_command.sessionLauncherWslRow()) |wsl_row| {
-        if (row == wsl_row) {
-            openWslSession();
-            return;
-        }
+    switch (sessionLauncherActionForRow(row) orelse return) {
+        .local_shell => openLocalShellSession(),
+        .ssh => openSshList(),
+        .tmux => openTmuxSshPicker(),
+        .wsl => openWslSession(),
+        .ai_chat => openDefaultAiSession(),
+        .ai_history => openAiHistorySourcePicker(),
+        .port_forwarding => openPortForwardingPage(),
+        .memory_center => openMemoryCenterPage(),
+        .settings => settingsPageOpen(),
+        else => {},
     }
-    if (row == platform_pty_command.sessionLauncherAiAgentRow()) {
-        openDefaultAiSession();
-    } else if (row == platform_pty_command.sessionLauncherAiHistoryRow()) {
-        openAiHistorySourcePicker();
-    }
+}
+
+fn openPortForwardingPage() void {
+    sessionLauncherClose();
+    _ = AppWindow.spawnPortForwardingTab();
+}
+
+fn openMemoryCenterPage() void {
+    sessionLauncherClose();
+    _ = AppWindow.spawnMemoryCenterTab();
 }
 
 fn openSshList() void {
@@ -5912,6 +5938,9 @@ fn sessionDesiredBoxWidth() f32 {
     }
     desired = @max(desired, sessionTwoColumnWidth(i18n.s().sl_ai_agent, defaultAiModeLabel()));
     desired = @max(desired, sessionTwoColumnWidth(i18n.s().sl_sessions, i18n.s().sl_sessions_detail));
+    desired = @max(desired, sessionTwoColumnWidth(i18n.s().pf_title, i18n.s().pf_detail));
+    desired = @max(desired, sessionTwoColumnWidth(i18n.s().memory_center_title, i18n.s().sl_memory_detail));
+    desired = @max(desired, sessionTwoColumnWidth(i18n.s().settings_title, i18n.s().sl_settings_detail));
     return desired;
 }
 
@@ -6104,17 +6133,9 @@ fn sessionHitTest(xpos: f64, ypos: f64, window_width: f32, window_height: f32, t
     }
 
     if (!g_ssh_form_visible and !g_ai_form_visible) {
-        if (row >= platform_pty_command.sessionLauncherRowCount()) return null;
+        const action = sessionLauncherActionForRow(row) orelse return null;
         g_session_launcher_selected = row;
-        if (row == 0) return .local_shell;
-        if (row == 1) return .ssh;
-        if (row == platform_pty_command.sessionLauncherTmuxRow()) return .tmux;
-        if (platform_pty_command.sessionLauncherWslRow()) |wsl_row| {
-            if (row == wsl_row) return .wsl;
-        }
-        if (row == platform_pty_command.sessionLauncherAiAgentRow()) return .ai_chat;
-        if (row == platform_pty_command.sessionLauncherAiHistoryRow()) return .ai_history;
-        return null;
+        return action;
     }
 
     if (g_ai_form_visible) {
@@ -6510,6 +6531,9 @@ pub fn renderSessionLauncher(window_width: f32, window_height: f32, top_offset: 
         }
         renderSessionRow(layout, window_height, platform_pty_command.sessionLauncherAiAgentRow(), i18n.s().sl_ai_agent, defaultAiModeLabel(), g_session_launcher_selected == platform_pty_command.sessionLauncherAiAgentRow());
         renderSessionRow(layout, window_height, platform_pty_command.sessionLauncherAiHistoryRow(), i18n.s().sl_sessions, i18n.s().sl_sessions_detail, g_session_launcher_selected == platform_pty_command.sessionLauncherAiHistoryRow());
+        renderSessionRow(layout, window_height, platform_pty_command.sessionLauncherPortForwardRow(), i18n.s().pf_title, i18n.s().pf_detail, g_session_launcher_selected == platform_pty_command.sessionLauncherPortForwardRow());
+        renderSessionRow(layout, window_height, platform_pty_command.sessionLauncherMemoryCenterRow(), i18n.s().memory_center_title, i18n.s().sl_memory_detail, g_session_launcher_selected == platform_pty_command.sessionLauncherMemoryCenterRow());
+        renderSessionRow(layout, window_height, platform_pty_command.sessionLauncherSettingsRow(), i18n.s().settings_title, i18n.s().sl_settings_detail, g_session_launcher_selected == platform_pty_command.sessionLauncherSettingsRow());
         return;
     }
 
@@ -7906,6 +7930,23 @@ test "overlays: SSH list caps visible rows to five when many profiles exist" {
     const layout = sessionLayout(900, 2000, 0);
     try std.testing.expectEqual(@as(usize, 5), layout.visible_rows);
     try std.testing.expect(layout.filter_h > 0);
+}
+
+test "overlays: session launcher offers workbench pages after sessions" {
+    const history = platform_pty_command.sessionLauncherAiHistoryRow();
+    const port = platform_pty_command.sessionLauncherPortForwardRow();
+    const memory = platform_pty_command.sessionLauncherMemoryCenterRow();
+    const settings_row = platform_pty_command.sessionLauncherSettingsRow();
+    try std.testing.expect(port > history);
+    try std.testing.expectEqual(port + 1, memory);
+    try std.testing.expectEqual(memory + 1, settings_row);
+    try std.testing.expectEqual(settings_row + 1, platform_pty_command.sessionLauncherRowCount());
+    try std.testing.expectEqual(SessionAction.local_shell, sessionLauncherActionForRow(0).?);
+    try std.testing.expectEqual(SessionAction.ssh, sessionLauncherActionForRow(1).?);
+    try std.testing.expectEqual(SessionAction.port_forwarding, sessionLauncherActionForRow(port).?);
+    try std.testing.expectEqual(SessionAction.memory_center, sessionLauncherActionForRow(memory).?);
+    try std.testing.expectEqual(SessionAction.settings, sessionLauncherActionForRow(settings_row).?);
+    try std.testing.expect(sessionLauncherActionForRow(platform_pty_command.sessionLauncherRowCount()) == null);
 }
 
 test "overlays: session launcher mouse wheel moves selection without wrapping" {
