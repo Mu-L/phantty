@@ -4614,6 +4614,7 @@ pub const Session = struct {
         var schedule_title_owned = true;
         errdefer if (schedule_title_owned) self.allocator.free(schedule_title);
 
+        const wire = ai_chat_protocol.wireProtocol(self.protocol, self.model());
         req.* = .{
             .allocator = self.allocator,
             .session = self,
@@ -4625,7 +4626,7 @@ pub const Session = struct {
             .messages = messages,
             .thinking_enabled = self.thinking_enabled,
             .reasoning_effort = reasoning_effort,
-            .stream = self.stream and !agent_enabled and self.protocol != .anthropic and self.protocol != .kimi,
+            .stream = self.stream and !agent_enabled and wire != .anthropic and wire != .kimi,
             .max_tokens = self.max_tokens,
             .agent_enabled = agent_enabled,
             .agent_instance_id = self.agentInstanceId(),

@@ -5,7 +5,7 @@ This folder is the source for the WispTerm GitHub Pages site.
 ## Files
 
 - `index.html` — landing page (hero, features, install, config, shortcuts).
-- `tutorial.zh.html` / `tutorial.css` — Chinese step-by-step guide to AI setup, SSH, conversations, memory, forwarding, files, skills, and workspace basics.
+- `tutorial.zh.html` / `tutorial.css` — Chinese step-by-step guide to AI setup, Codex/Kimi/xAI/OpenCode Go subscriptions, SSH, conversations, memory, forwarding, files, skills, and workspace basics.
 - `theme.js` — shared light/dark theme toggle; follows the OS until the reader chooses a theme, persists that choice, and synchronizes open pages.
 - `assets/tutorial/` — real Windows app screenshots using isolated demonstration profiles and records; see the capture notes in that folder.
 - `ai.html` / `ai.zh.html` — DeepSeek-first Copilot workflow pages.

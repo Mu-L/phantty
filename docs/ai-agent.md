@@ -82,11 +82,20 @@ the browser. Tokens are stored in `oauth.json` next to `ai_profiles` (mode
 | `codex` | ChatGPT Plus or Pro | `https://chatgpt.com/backend-api` | Codex responses (`/codex/responses`) |
 | `kimi` | Kimi Code | `https://api.kimi.com/coding` | Anthropic Messages, `Authorization: Bearer` |
 | `xai` | SuperGrok or X Premium | `https://api.x.ai/v1` | OpenAI Responses |
+| `opencode-go` | OpenCode Go API key | `https://opencode.ai/zen/go/v1` | Chat, responses, or messages, chosen from the model id |
 
 Codex requires the subscription sign-in. Kimi and xAI use the stored subscription
 when it exists, and otherwise send the profile API key as a bearer token.
 `KIMI_CODE_OAUTH_HOST` (or `KIMI_OAUTH_HOST`) overrides the Kimi login host.
 Streaming stays off for `kimi`, the same as `anthropic`.
+
+OpenCode Go is not a device-login. Paste the key from the OpenCode Zen console
+into API key. Each conversation sends that id in `x-opencode-session`, and the
+client identifies itself as `wispterm/<version>`. The same header is added for
+any profile whose base URL is `https://opencode.ai/zen/go`. A model such as
+`glm-5.3-flash` uses `/chat/completions`, `grok-4.7` uses `/responses`, and
+`minimax-m3` or `qwen3.7-plus` uses `/messages`. Messages models stay
+non-streaming.
 
 ## Sessions
 

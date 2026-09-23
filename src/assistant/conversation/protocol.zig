@@ -30,6 +30,9 @@ pub const ApiProtocol = enum {
     kimi,
     /// SuperGrok / X Premium subscription. Wire format is the OpenAI Responses API.
     xai,
+    /// OpenCode Go subscription. API key plus a stable `x-opencode-session`.
+    /// The wire format follows the model: chat completions, responses, or messages.
+    opencode_go,
 
     pub fn parse(value: []const u8) ApiProtocol {
         const trimmed = std.mem.trim(u8, value, " \t\r\n");
@@ -48,6 +51,9 @@ pub const ApiProtocol = enum {
         if (std.ascii.eqlIgnoreCase(trimmed, "codex") or std.ascii.eqlIgnoreCase(trimmed, "openai-codex")) return .codex;
         if (std.ascii.eqlIgnoreCase(trimmed, "kimi") or std.ascii.eqlIgnoreCase(trimmed, "kimi-coding")) return .kimi;
         if (std.ascii.eqlIgnoreCase(trimmed, "xai") or std.ascii.eqlIgnoreCase(trimmed, "grok")) return .xai;
+        if (std.ascii.eqlIgnoreCase(trimmed, "opencode-go") or
+            std.ascii.eqlIgnoreCase(trimmed, "opencode_go") or
+            std.ascii.eqlIgnoreCase(trimmed, "opencode")) return .opencode_go;
         // Legacy ACP profiles no longer launch a subprocess. They parse as the
         // default HTTP protocol so the saved line still loads.
         return .chat_completions;
@@ -61,6 +67,7 @@ pub const ApiProtocol = enum {
             .codex => "codex",
             .kimi => "kimi",
             .xai => "xai",
+            .opencode_go => "opencode-go",
         };
     }
 
@@ -78,6 +85,7 @@ pub const ApiProtocol = enum {
             .codex => .{ .base_url = "https://chatgpt.com/backend-api", .model = "gpt-5.4" },
             .kimi => .{ .base_url = "https://api.kimi.com/coding", .model = "kimi-for-coding" },
             .xai => .{ .base_url = "https://api.x.ai/v1", .model = "grok-4" },
+            .opencode_go => .{ .base_url = "https://opencode.ai/zen/go/v1", .model = "glm-5.3-flash" },
             else => null,
         };
     }
@@ -112,16 +120,18 @@ pub const ApiProtocol = enum {
                 .anthropic => .codex,
                 .codex => .kimi,
                 .kimi => .xai,
-                .xai => .chat_completions,
+                .xai => .opencode_go,
+                .opencode_go => .chat_completions,
             };
         }
         return switch (self) {
-            .chat_completions => .xai,
+            .chat_completions => .opencode_go,
             .responses => .chat_completions,
             .anthropic => .responses,
             .codex => .anthropic,
             .kimi => .codex,
             .xai => .kimi,
+            .opencode_go => .xai,
         };
     }
 };
@@ -132,12 +142,13 @@ test "ApiProtocol.cycle toggles forward and backward through the valid set, wrap
     try std.testing.expectEqual(ApiProtocol.codex, ApiProtocol.anthropic.cycle(true));
     try std.testing.expectEqual(ApiProtocol.kimi, ApiProtocol.codex.cycle(true));
     try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.kimi.cycle(true));
-    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.xai.cycle(true));
-    try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.chat_completions.cycle(false));
+    try std.testing.expectEqual(ApiProtocol.opencode_go, ApiProtocol.xai.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.opencode_go.cycle(true));
+    try std.testing.expectEqual(ApiProtocol.opencode_go, ApiProtocol.chat_completions.cycle(false));
     try std.testing.expectEqual(ApiProtocol.chat_completions, ApiProtocol.responses.cycle(false));
-    try std.testing.expectEqual(ApiProtocol.kimi, ApiProtocol.xai.cycle(false));
+    try std.testing.expectEqual(ApiProtocol.xai, ApiProtocol.opencode_go.cycle(false));
     var cursor = ApiProtocol.chat_completions;
-    for (0..6) |_| cursor = cursor.cycle(true);
+    for (0..7) |_| cursor = cursor.cycle(true);
     try std.testing.expectEqual(ApiProtocol.chat_completions, cursor);
 }
 
@@ -153,6 +164,34 @@ test "subscription protocols parse and legacy acp does not" {
     try std.testing.expectEqualStrings("https://api.x.ai/v1", preset.base_url);
     try std.testing.expect(ApiProtocol.isSubscriptionBaseUrl("https://chatgpt.com/backend-api"));
     try std.testing.expect(ApiProtocol.isSubscriptionModel("kimi-for-coding"));
+    try std.testing.expectEqual(ApiProtocol.opencode_go, ApiProtocol.parse("opencode-go"));
+    try std.testing.expect(!ApiProtocol.opencode_go.isSubscription());
+    const go = ApiProtocol.opencode_go.subscriptionPreset().?;
+    try std.testing.expectEqualStrings("https://opencode.ai/zen/go/v1", go.base_url);
+    try std.testing.expectEqualStrings("glm-5.3-flash", go.model);
+}
+
+test "opencode go routes models to chat, responses, or messages" {
+    const a = std.testing.allocator;
+    try std.testing.expectEqual(OpenCodeGoApi.chat, opencodeGoApi("glm-5.3-flash"));
+    try std.testing.expectEqual(OpenCodeGoApi.chat, opencodeGoApi("kimi-k2.7-code"));
+    try std.testing.expectEqual(OpenCodeGoApi.responses, opencodeGoApi("grok-4.7"));
+    try std.testing.expectEqual(OpenCodeGoApi.responses, opencodeGoApi("GPT-5.6-Luna"));
+    try std.testing.expectEqual(OpenCodeGoApi.messages, opencodeGoApi("opencode-go/qwen3.7-plus"));
+    try std.testing.expectEqual(OpenCodeGoApi.messages, opencodeGoApi("minimax-m3"));
+    try std.testing.expect(needsOpenCodeSession(.chat_completions, "https://opencode.ai/zen/go/v1"));
+    try std.testing.expect(!needsOpenCodeSession(.chat_completions, "https://api.openai.com/v1"));
+    try std.testing.expect(needsOpenCodeSession(.opencode_go, "https://example.test"));
+
+    const chat = try apiEndpointForModel(a, "https://opencode.ai/zen/go/v1", .opencode_go, "glm-5.3");
+    defer a.free(chat);
+    const responses = try apiEndpointForModel(a, "https://opencode.ai/zen/go/v1/", .opencode_go, "grok-4.6");
+    defer a.free(responses);
+    const messages = try apiEndpointForModel(a, "https://opencode.ai/zen/go/v1", .opencode_go, "minimax-m2.7");
+    defer a.free(messages);
+    try std.testing.expectEqualStrings("https://opencode.ai/zen/go/v1/chat/completions", chat);
+    try std.testing.expectEqualStrings("https://opencode.ai/zen/go/v1/responses", responses);
+    try std.testing.expectEqualStrings("https://opencode.ai/zen/go/v1/messages", messages);
 }
 
 pub const Role = enum {
@@ -323,8 +362,8 @@ pub const RequestParams = struct {
 };
 
 pub fn buildRequestJson(allocator: std.mem.Allocator, params: RequestParams, messages: []const RequestMessage, include_tools: bool) ![]u8 {
-    return switch (params.protocol) {
-        .chat_completions => buildChatCompletionsRequestJsonForMessages(allocator, params, messages, include_tools),
+    return switch (wireProtocol(params.protocol, params.model)) {
+        .chat_completions, .opencode_go => buildChatCompletionsRequestJsonForMessages(allocator, params, messages, include_tools),
         .responses, .codex, .xai => buildResponsesRequestJsonForMessages(allocator, params, messages, include_tools),
         .anthropic, .kimi => buildAnthropicRequestJsonForMessages(allocator, params, messages, include_tools),
     };
@@ -383,12 +422,70 @@ pub fn isAnthropicBaseUrl(base_url: []const u8) bool {
 }
 
 pub fn apiEndpoint(allocator: std.mem.Allocator, base_url_raw: []const u8, protocol: ApiProtocol) ![]u8 {
+    return apiEndpointForModel(allocator, base_url_raw, protocol, "");
+}
+
+/// OpenCode Go publishes three endpoints under one base URL. The model id
+/// selects which one a request uses. https://opencode.ai/docs/go/
+pub const OpenCodeGoApi = enum { chat, responses, messages };
+
+pub fn opencodeGoApi(model: []const u8) OpenCodeGoApi {
+    const trimmed = std.mem.trim(u8, model, " \t\r\n");
+    const prefix = "opencode-go/";
+    const id = if (trimmed.len >= prefix.len and std.ascii.eqlIgnoreCase(trimmed[0..prefix.len], prefix))
+        trimmed[prefix.len..]
+    else
+        trimmed;
+    if (eqlIgnore(id, "grok-4.7") or eqlIgnore(id, "grok-4.6") or eqlIgnore(id, "gpt-5.6-luna") or startsIgnore(id, "muse-spark-")) {
+        return .responses;
+    }
+    if (startsIgnore(id, "minimax-") or startsIgnore(id, "qwen")) return .messages;
+    return .chat;
+}
+
+pub fn isOpenCodeGoBaseUrl(base_url: []const u8) bool {
+    return std.ascii.indexOfIgnoreCase(base_url, "opencode.ai") != null and
+        std.ascii.indexOfIgnoreCase(base_url, "/zen/go") != null;
+}
+
+pub fn needsOpenCodeSession(protocol: ApiProtocol, base_url: []const u8) bool {
+    return protocol == .opencode_go or isOpenCodeGoBaseUrl(base_url);
+}
+
+/// Wire format used to build and parse a request. OpenCode Go keeps its own
+/// protocol value so the session header stays attached, but the body matches
+/// the model's endpoint.
+pub fn wireProtocol(protocol: ApiProtocol, model: []const u8) ApiProtocol {
+    if (protocol != .opencode_go) return protocol;
+    return switch (opencodeGoApi(model)) {
+        .chat => .chat_completions,
+        .responses => .responses,
+        .messages => .anthropic,
+    };
+}
+
+pub fn apiEndpointForModel(allocator: std.mem.Allocator, base_url_raw: []const u8, protocol: ApiProtocol, model: []const u8) ![]u8 {
+    if (protocol == .opencode_go) {
+        return switch (opencodeGoApi(model)) {
+            .chat => chatEndpoint(allocator, base_url_raw),
+            .responses => responsesEndpoint(allocator, base_url_raw),
+            .messages => endpointWithSuffix(allocator, base_url_raw, "/messages"),
+        };
+    }
     return switch (protocol) {
-        .chat_completions => chatEndpoint(allocator, base_url_raw),
+        .chat_completions, .opencode_go => chatEndpoint(allocator, base_url_raw),
         .responses, .xai => responsesEndpoint(allocator, base_url_raw),
         .codex => endpointWithSuffix(allocator, base_url_raw, "/codex/responses"),
         .anthropic, .kimi => messagesEndpoint(allocator, base_url_raw),
     };
+}
+
+fn eqlIgnore(text: []const u8, expected: []const u8) bool {
+    return std.ascii.eqlIgnoreCase(text, expected);
+}
+
+fn startsIgnore(text: []const u8, prefix: []const u8) bool {
+    return text.len >= prefix.len and std.ascii.eqlIgnoreCase(text[0..prefix.len], prefix);
 }
 
 pub fn chatEndpoint(allocator: std.mem.Allocator, base_url_raw: []const u8) ![]u8 {
@@ -1585,6 +1682,28 @@ test "buildRequestJson chat_completions omits reasoning_effort when thinking dis
     defer a.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"thinking\":{\"type\":\"disabled\"}") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"reasoning_effort\"") == null);
+}
+
+test "opencode go request json follows the model endpoint" {
+    const a = std.testing.allocator;
+    var msgs = [_]RequestMessage{.{ .role = .user, .content = @constCast("hello") }};
+    const chat = RequestParams{ .model = "glm-5.3-flash", .system_prompt = "sys", .protocol = .opencode_go, .thinking_enabled = false, .reasoning_effort = "", .stream = false };
+    const chat_json = try buildRequestJson(a, chat, &msgs, false);
+    defer a.free(chat_json);
+    try std.testing.expect(std.mem.indexOf(u8, chat_json, "\"messages\":[") != null);
+    try std.testing.expect(std.mem.indexOf(u8, chat_json, "\"store\"") == null);
+
+    const responses = RequestParams{ .model = "grok-4.7", .system_prompt = "sys", .protocol = .opencode_go, .thinking_enabled = false, .reasoning_effort = "", .stream = false };
+    const responses_json = try buildRequestJson(a, responses, &msgs, false);
+    defer a.free(responses_json);
+    try std.testing.expect(std.mem.indexOf(u8, responses_json, "\"input\":[") != null);
+    try std.testing.expect(std.mem.indexOf(u8, responses_json, "\"store\"") == null);
+
+    const messages = RequestParams{ .model = "minimax-m3", .system_prompt = "sys", .protocol = .opencode_go, .thinking_enabled = false, .reasoning_effort = "", .stream = false };
+    const messages_json = try buildRequestJson(a, messages, &msgs, false);
+    defer a.free(messages_json);
+    try std.testing.expect(std.mem.indexOf(u8, messages_json, "\"max_tokens\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, messages_json, "\"messages\":[") != null);
 }
 
 test "buildRequestJson responses uses input + instructions" {

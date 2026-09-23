@@ -20,6 +20,7 @@ const ai_loop_store = @import("../loop/store.zig");
 const platform_agent_prompt = @import("../../platform/agent_prompt.zig");
 const oauth_client = @import("../oauth/client.zig");
 const platform_http = @import("../../platform/http_client.zig");
+const app_metadata = @import("../../app_metadata.zig");
 const Config = @import("../../config.zig");
 
 const title_log = std.log.scoped(.ai_title);
@@ -570,12 +571,14 @@ fn oneShotRequestProtocol(session: *const Session) ApiProtocol {
 const PreparedCall = struct {
     access: oauth_client.Access,
     bearer: []u8,
-    extra: [4]std.http.Header = undefined,
+    user_agent: ?[]u8 = null,
+    extra: [6]std.http.Header = undefined,
     extra_len: usize = 0,
     omit_authorization: bool = false,
 
     fn deinit(self: *PreparedCall, allocator: std.mem.Allocator) void {
         allocator.free(self.bearer);
+        if (self.user_agent) |user_agent| allocator.free(user_agent);
         self.access.deinit(allocator);
     }
 };
@@ -588,8 +591,9 @@ fn prepareCall(request: *const ChatRequest) !PreparedCall {
     };
     errdefer access.deinit(allocator);
     const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{access.token});
+    errdefer allocator.free(bearer);
     var prepared = PreparedCall{ .access = access, .bearer = bearer };
-    switch (request.protocol) {
+    switch (ai_chat_protocol.wireProtocol(request.protocol, request.model)) {
         .anthropic => {
             prepared.omit_authorization = true;
             prepared.extra[0] = .{ .name = "x-api-key", .value = access.token };
@@ -606,6 +610,12 @@ fn prepareCall(request: *const ChatRequest) !PreparedCall {
             prepared.extra_len = 2;
         },
         else => {},
+    }
+    if (ai_chat_protocol.needsOpenCodeSession(request.protocol, request.base_url)) {
+        const session_id = if (request.schedule_session_id.len > 0) request.schedule_session_id else "wispterm";
+        prepared.extra[prepared.extra_len] = .{ .name = "x-opencode-session", .value = session_id };
+        prepared.extra_len += 1;
+        prepared.user_agent = try std.fmt.allocPrint(allocator, "wispterm/{s}", .{app_metadata.version});
     }
     return prepared;
 }
@@ -651,6 +661,12 @@ fn providerHeaders(prepared: *const PreparedCall, out: []platform_http.Header) u
         out[n] = header;
         n += 1;
     }
+    if (prepared.user_agent) |user_agent| {
+        if (n < out.len) {
+            out[n] = .{ .name = "User-Agent", .value = user_agent };
+            n += 1;
+        }
+    }
     return n;
 }
 
@@ -661,7 +677,7 @@ fn postViaProxy(
     prepared: *const PreparedCall,
     explicit_proxy: ?[]const u8,
 ) !platform_http.Response {
-    var headers: [8]platform_http.Header = undefined;
+    var headers: [12]platform_http.Header = undefined;
     const n = providerHeaders(prepared, &headers);
     return platform_http.fetch(allocator, .{
         .method = .POST,
@@ -678,7 +694,7 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
     const allocator = request.allocator;
     var prepared = prepareCall(request) catch |err| return authFailureResult(allocator, err);
     defer prepared.deinit(allocator);
-    const endpoint = try ai_chat_protocol.apiEndpoint(allocator, request.base_url, request.protocol);
+    const endpoint = try ai_chat_protocol.apiEndpointForModel(allocator, request.base_url, request.protocol, request.model);
     defer allocator.free(endpoint);
 
     const body = try buildRequestJsonForMessages(allocator, request, messages, include_tools);
@@ -698,7 +714,7 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
         return if (request.stream)
             ai_chat_protocol.parseApiStreamResponse(allocator, response.body)
         else
-            ai_chat_protocol.parseApiResponse(allocator, response.body, request.protocol);
+            ai_chat_protocol.parseApiResponse(allocator, response.body, ai_chat_protocol.wireProtocol(request.protocol, request.model));
     }
 
     var client: std.http.Client = .{
@@ -717,6 +733,7 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
         .headers = .{
             .content_type = .{ .override = "application/json" },
             .authorization = if (prepared.omit_authorization) .omit else .{ .override = prepared.bearer },
+            .user_agent = if (prepared.user_agent) |user_agent| .{ .override = user_agent } else .default,
         },
         .extra_headers = prepared.extra[0..prepared.extra_len],
         .response_writer = &resp_buf.writer,
@@ -735,7 +752,7 @@ fn runChatRequestForMessages(request: *const ChatRequest, messages: []const Requ
     return if (request.stream)
         ai_chat_protocol.parseApiStreamResponse(allocator, resp_list.items)
     else
-        ai_chat_protocol.parseApiResponse(allocator, resp_list.items, request.protocol);
+        ai_chat_protocol.parseApiResponse(allocator, resp_list.items, ai_chat_protocol.wireProtocol(request.protocol, request.model));
 }
 
 fn runChatRequestStreaming(request: *const ChatRequest) !void {
@@ -747,7 +764,7 @@ fn runChatRequestStreaming(request: *const ChatRequest) !void {
         return;
     };
     defer prepared.deinit(allocator);
-    const endpoint = try ai_chat_protocol.apiEndpoint(allocator, request.base_url, request.protocol);
+    const endpoint = try ai_chat_protocol.apiEndpointForModel(allocator, request.base_url, request.protocol, request.model);
     defer allocator.free(endpoint);
 
     const body = try buildRequestJson(allocator, request);
@@ -797,6 +814,7 @@ fn runChatRequestStreaming(request: *const ChatRequest) !void {
         .headers = .{
             .content_type = .{ .override = "application/json" },
             .authorization = if (prepared.omit_authorization) .omit else .{ .override = prepared.bearer },
+            .user_agent = if (prepared.user_agent) |user_agent| .{ .override = user_agent } else .default,
         },
         .extra_headers = prepared.extra[0..prepared.extra_len],
         .keep_alive = false,
