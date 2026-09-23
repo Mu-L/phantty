@@ -511,6 +511,8 @@ fn buildResponsesRequestJsonForMessages(
         try out.appendSlice(allocator, ",\"instructions\":");
         try appendJsonString(allocator, &out, params.system_prompt);
     }
+    // chatgpt.com/backend-api/codex/responses requires typed input items.
+    const codex_item = params.protocol == .codex;
     try out.appendSlice(allocator, ",\"input\":[");
     var wrote_item = false;
     for (messages) |msg| {
@@ -526,9 +528,9 @@ fn buildResponsesRequestJsonForMessages(
         if (msg.content.len > 0 or msg.hasImages()) {
             if (wrote_item) try out.append(allocator, ',');
             if (msg.hasImages()) {
-                try appendResponseUserImageMessage(allocator, &out, msg);
+                try appendResponseUserImageMessage(allocator, &out, msg, codex_item);
             } else {
-                try appendResponseMessage(allocator, &out, msg.role, msg.content);
+                try appendResponseMessage(allocator, &out, msg.role, msg.content, codex_item);
             }
             wrote_item = true;
         }
@@ -549,10 +551,14 @@ fn buildResponsesRequestJsonForMessages(
         try appendJsonString(allocator, &out, params.reasoning_effort);
         try out.append(allocator, '}');
     }
+    // chatgpt.com/backend-api/codex/responses requires store:false and stream:true.
+    const wire_stream = params.stream or params.protocol == .codex;
     try out.appendSlice(allocator, ",\"stream\":");
-    try out.appendSlice(allocator, if (params.stream) "true" else "false");
+    try out.appendSlice(allocator, if (wire_stream) "true" else "false");
+    if (params.protocol == .codex) try out.appendSlice(allocator, ",\"store\":false");
     if (include_tools) {
         try appendResponseToolSchemas(allocator, &out, .{ .include_memory = params.memory_enabled, .toolset = params.toolset, .dynamic_tools = params.dynamic_tools, .mcp_tools = params.mcp_tools, .disabled_first_party_tools = params.disabled_first_party_tools });
+        if (params.protocol == .codex) try out.appendSlice(allocator, ",\"parallel_tool_calls\":true");
     }
     try out.append(allocator, '}');
 
@@ -657,7 +663,18 @@ fn appendAnthropicTools(allocator: std.mem.Allocator, out: *std.ArrayListUnmanag
     try out.append(allocator, ']');
 }
 
-fn appendResponseMessage(allocator: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), role: Role, content: []const u8) !void {
+fn appendResponseMessage(allocator: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), role: Role, content: []const u8, codex_item: bool) !void {
+    if (codex_item) {
+        const part = if (role == .assistant) "output_text" else "input_text";
+        try out.appendSlice(allocator, "{\"type\":\"message\",\"role\":");
+        try appendJsonString(allocator, out, role.apiName());
+        try out.appendSlice(allocator, ",\"content\":[{\"type\":\"");
+        try out.appendSlice(allocator, part);
+        try out.appendSlice(allocator, "\",\"text\":");
+        try appendJsonString(allocator, out, content);
+        try out.appendSlice(allocator, "}]}");
+        return;
+    }
     try out.appendSlice(allocator, "{\"role\":");
     try appendJsonString(allocator, out, role.apiName());
     try out.appendSlice(allocator, ",\"content\":");
@@ -723,8 +740,8 @@ fn appendAnthropicImageContent(allocator: std.mem.Allocator, out: *std.ArrayList
     try out.appendSlice(allocator, "]}");
 }
 
-fn appendResponseUserImageMessage(allocator: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), msg: RequestMessage) !void {
-    try out.appendSlice(allocator, "{\"role\":");
+fn appendResponseUserImageMessage(allocator: std.mem.Allocator, out: *std.ArrayListUnmanaged(u8), msg: RequestMessage, codex_item: bool) !void {
+    if (codex_item) try out.appendSlice(allocator, "{\"type\":\"message\",\"role\":") else try out.appendSlice(allocator, "{\"role\":");
     try appendJsonString(allocator, out, msg.role.apiName());
     try out.appendSlice(allocator, ",\"content\":[{\"type\":\"input_text\",\"text\":");
     try appendJsonString(allocator, out, msg.content);
@@ -1029,6 +1046,11 @@ fn appendResponseToolSchemas(allocator: std.mem.Allocator, out: *std.ArrayListUn
 // ---------------------------------------------------------------------------
 
 pub fn parseApiResponse(allocator: std.mem.Allocator, body: []const u8, protocol: ApiProtocol) !ApiResult {
+    // Codex subscription calls are streamed even when the caller asked for one result.
+    const trimmed_lead = std.mem.trim(u8, body, " \t\r\n");
+    if (std.mem.startsWith(u8, trimmed_lead, "data:") or std.mem.startsWith(u8, trimmed_lead, "event:")) {
+        return parseApiStreamResponse(allocator, trimmed_lead);
+    }
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch {
         const trimmed = std.mem.trim(u8, body, " \t\r\n");
         if (trimmed.len == 0) return error.EmptyResponse;
@@ -1573,6 +1595,27 @@ test "buildRequestJson responses uses input + instructions" {
     defer a.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"instructions\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"input\":[") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"store\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"stream\":false") != null);
+}
+
+test "codex subscription request forces store false and a streamed typed input" {
+    const a = std.testing.allocator;
+    var calls = [_]ToolCall{.{ .id = @constCast("call_1"), .name = @constCast("terminal_list"), .arguments = @constCast("{}") }};
+    var msgs = [_]RequestMessage{
+        .{ .role = .user, .content = @constCast("hello") },
+        .{ .role = .assistant, .content = @constCast("checking"), .tool_calls = &calls },
+    };
+    const params = RequestParams{ .model = "gpt-5.4", .system_prompt = "sys", .protocol = .codex, .thinking_enabled = false, .reasoning_effort = "", .stream = false };
+    const json = try buildRequestJson(a, params, &msgs, true);
+    defer a.free(json);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"store\":false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"stream\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"stream\":false") == null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"output_text\",\"text\":\"checking\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"function_call\",\"call_id\":\"call_1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"parallel_tool_calls\":true") != null);
 }
 
 test "parseApiResponse reads chat_completions content + usage" {
@@ -2095,6 +2138,11 @@ pub fn parseApiStreamResponse(allocator: std.mem.Allocator, body: []const u8) !A
     errdefer content.deinit(allocator);
     var reasoning: std.ArrayListUnmanaged(u8) = .empty;
     errdefer reasoning.deinit(allocator);
+    var tool_calls: ?[]ToolCall = null;
+    errdefer if (tool_calls) |calls| {
+        for (calls) |call| call.deinit(allocator);
+        allocator.free(calls);
+    };
     var usage: ?ApiUsage = null;
 
     var lines = std.mem.splitScalar(u8, body, '\n');
@@ -2131,11 +2179,12 @@ pub fn parseApiStreamResponse(allocator: std.mem.Allocator, body: []const u8) !A
                 }
                 continue;
             }
-            if (std.mem.eql(u8, event_type, "response.completed")) {
+            if (std.mem.eql(u8, event_type, "response.completed") or std.mem.eql(u8, event_type, "response.incomplete")) {
                 if (obj.get("response")) |response_value| {
                     if (parseApiUsage(response_value)) |u| usage = u;
                     if (content.items.len == 0) try appendResponsesOutputText(allocator, &content, response_value);
                     if (reasoning.items.len == 0) try appendResponsesReasoningText(allocator, &reasoning, response_value);
+                    if (tool_calls == null) tool_calls = try parseResponsesToolCalls(allocator, response_value);
                 }
                 break;
             }
@@ -2145,7 +2194,7 @@ pub fn parseApiStreamResponse(allocator: std.mem.Allocator, body: []const u8) !A
                         if (try parseApiErrorResult(allocator, response_value)) |result| return result;
                     }
                 }
-                return ApiResult{ .content = try allocator.dupe(u8, "API returned an error") };
+                return ApiResult{ .content = try allocator.dupe(u8, "API returned an error"), .api_error = true };
             }
         }
 
@@ -2168,15 +2217,21 @@ pub fn parseApiStreamResponse(allocator: std.mem.Allocator, body: []const u8) !A
         }
     }
 
-    if (content.items.len == 0 and reasoning.items.len == 0) {
+    if (content.items.len == 0 and reasoning.items.len == 0 and tool_calls == null) {
         const trimmed = std.mem.trim(u8, body, " \t\r\n");
         if (trimmed.len == 0) return error.EmptyResponse;
         return ApiResult{ .content = try allocator.dupe(u8, trimmed) };
     }
 
+    const content_slice = try content.toOwnedSlice(allocator);
+    errdefer allocator.free(content_slice);
+    const reasoning_slice = if (reasoning.items.len > 0) try reasoning.toOwnedSlice(allocator) else null;
+    const calls = tool_calls;
+    tool_calls = null;
     return .{
-        .content = try content.toOwnedSlice(allocator),
-        .reasoning = if (reasoning.items.len > 0) try reasoning.toOwnedSlice(allocator) else null,
+        .content = content_slice,
+        .reasoning = reasoning_slice,
+        .tool_calls = calls,
         .usage = usage,
     };
 }
@@ -2200,6 +2255,22 @@ test "ai chat stream response aggregates content and reasoning chunks" {
     try std.testing.expectEqual(@as(u64, 46), result.usage.?.total_tokens);
     try std.testing.expectEqual(@as(u64, 5), result.usage.?.prompt_cache_hit_tokens);
     try std.testing.expectEqual(@as(u64, 7), result.usage.?.prompt_cache_miss_tokens);
+}
+
+test "codex sse response keeps text and function calls from response.completed" {
+    const allocator = std.testing.allocator;
+    const body =
+        "event: response.completed\n" ++
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"total_tokens\":6},\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hi\"}]},{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"terminal_list\",\"arguments\":\"{}\"}]}}\n\n";
+    var result = try parseApiResponse(allocator, body, .codex);
+    defer result.deinit(allocator);
+    try std.testing.expectEqualStrings("hi", result.content);
+    try std.testing.expect(result.tool_calls != null);
+    try std.testing.expectEqualStrings("terminal_list", result.tool_calls.?[0].name);
+    try std.testing.expectEqualStrings("call_1", result.tool_calls.?[0].id);
+    try std.testing.expectEqualStrings("{}", result.tool_calls.?[0].arguments);
+    try std.testing.expect(result.usage != null);
+    try std.testing.expectEqual(@as(u64, 6), result.usage.?.total_tokens);
 }
 
 test "ai chat Responses API stream aggregates output text and usage" {
