@@ -5253,8 +5253,13 @@ pub fn splitFocusedReturningSurface(direction: SplitTree.Split.Direction) ?*Surf
         }
     }
 
+    // Only local splits need a native cwd: WSL splits carry it as `wsl.exe --cd`
+    // (tab.splitSpawnCommand) and SSH cwds are remote. Converting a WSL /home/...
+    // cwd here handed CreateProcess a cold \\wsl.localhost UNC dir — part of the
+    // multi-second UI freeze on the first WSL split.
     var cwd_buf: platform_pty_command.CwdBuffer = undefined;
-    const cwd = getActiveCwd(&cwd_buf);
+    const split_kind = if (activeSurface()) |s| s.launch_kind else .local;
+    const cwd = if (split_kind == .local) getActiveCwd(&cwd_buf) else null;
     const surface = tab.splitFocusedReturningSurface(allocator, direction, font.cell_width, font.cell_height, g_cursor_style, g_cursor_blink, cwd) orelse return null;
     if (surface.ssh_connection) |conn| {
         if (conn.usesPasswordAuth()) {

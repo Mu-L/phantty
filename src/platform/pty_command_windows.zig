@@ -296,11 +296,42 @@ pub fn wslAvailable() bool {
     return g_wsl_available_value;
 }
 
+const lxss_subkey = std.unicode.utf8ToUtf16LeStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Lxss");
+
+/// Default WSL distribution name (e.g. "Ubuntu") as UTF-8 in `out`, read from
+/// the same per-user `Lxss` key as `wslAvailable()`: `DefaultDistribution` holds
+/// the distro GUID, and `Lxss\{GUID}\DistributionName` its name. Replaces
+/// spawning `wsl.exe --list`, which blocked the UI thread on the first WSL
+/// guest-path conversion (first split / new tab from a WSL tab).
+pub fn wslDefaultDistroName(out: []u8) ?[]const u8 {
+    const advapi32 = windows.advapi32;
+    var hkey: windows.HKEY = undefined;
+    if (advapi32.RegOpenKeyExW(windows.HKEY_CURRENT_USER, lxss_subkey, 0, windows.KEY_READ, &hkey) != 0) return null;
+    defer _ = advapi32.RegCloseKey(hkey);
+
+    var guid: [64:0]u16 = undefined;
+    _ = readRegSz(hkey, std.unicode.utf8ToUtf16LeStringLiteral(""), std.unicode.utf8ToUtf16LeStringLiteral("DefaultDistribution"), &guid) orelse return null;
+    var name: [64:0]u16 = undefined;
+    const units = readRegSz(hkey, &guid, std.unicode.utf8ToUtf16LeStringLiteral("DistributionName"), &name) orelse return null;
+    // One UTF-16 unit expands to at most 3 UTF-8 bytes; utf16LeToUtf8 does not bounds-check.
+    if (units.len == 0 or units.len * 3 > out.len) return null;
+    const n = std.unicode.utf16LeToUtf8(out, units) catch return null;
+    return out[0..n];
+}
+
+/// REG_SZ value under `hkey\subkey` ("" = hkey itself), without its terminator.
+/// Null when missing, not a string, or longer than `buf`.
+fn readRegSz(hkey: windows.HKEY, subkey: [*:0]const u16, value: [*:0]const u16, buf: *[64:0]u16) ?[]const u16 {
+    var size: windows.DWORD = @sizeOf([64:0]u16);
+    if (windows.advapi32.RegGetValueW(hkey, subkey, value, windows.advapi32.RRF.RT_REG_SZ, null, buf, &size) != 0) return null;
+    const units: usize = size / 2;
+    return buf[0..units -| 1];
+}
+
 fn probeWslInstalledDistro() bool {
     const advapi32 = windows.advapi32;
-    const subkey = std.unicode.utf8ToUtf16LeStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Lxss");
     var hkey: windows.HKEY = undefined;
-    if (advapi32.RegOpenKeyExW(windows.HKEY_CURRENT_USER, subkey, 0, windows.KEY_READ, &hkey) != 0) {
+    if (advapi32.RegOpenKeyExW(windows.HKEY_CURRENT_USER, lxss_subkey, 0, windows.KEY_READ, &hkey) != 0) {
         return false;
     }
     defer _ = advapi32.RegCloseKey(hkey);
