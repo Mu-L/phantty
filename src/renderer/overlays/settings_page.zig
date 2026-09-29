@@ -115,6 +115,11 @@ pub const State = struct {
     picker_choices: []const []const u8 = &.{},
     picker_choices_owned: bool = false,
     picker_allocator: ?std.mem.Allocator = null,
+    // Type-to-search for owned (font) lists: hundreds of families are
+    // unusable with arrows alone (#647). `picker_view` holds the matches.
+    picker_query: [64]u8 = undefined,
+    picker_query_len: usize = 0,
+    picker_view: std.ArrayListUnmanaged([]const u8) = .empty,
     proxy_editing: bool = false,
     proxy_draft_invalid: bool = false,
     proxy_draft_len: usize = 0,
@@ -209,9 +214,12 @@ pub const State = struct {
             if (self.picker_allocator orelse allocator) |alloc| {
                 for (self.picker_choices) |choice| alloc.free(choice);
                 alloc.free(self.picker_choices);
+                self.picker_view.deinit(alloc);
             } else return;
         }
         self.picker.close();
+        self.picker_view = .empty;
+        self.picker_query_len = 0;
         self.picker_choices = &.{};
         self.picker_choices_owned = false;
         self.picker_allocator = null;
@@ -225,23 +233,66 @@ pub const State = struct {
         return self.picker.kind;
     }
 
+    /// The choices currently listed: every choice, or the search matches.
+    fn pickerVisible(self: *const State) []const []const u8 {
+        return if (self.picker_query_len > 0) self.picker_view.items else self.picker_choices;
+    }
+
     pub fn pickerCount(self: *const State) usize {
-        return if (self.pickerOpen()) self.picker_choices.len else 0;
+        return if (self.pickerOpen()) self.pickerVisible().len else 0;
     }
 
     pub fn pickerValue(self: *const State) ?[]const u8 {
-        return self.picker.selectedValue(self.picker_choices);
+        return self.picker.selectedValue(self.pickerVisible());
     }
 
     pub fn pickerValueAt(self: *const State, index: usize) ?[]const u8 {
-        if (!self.pickerOpen() or index >= self.picker_choices.len) return null;
-        return self.picker_choices[index];
+        const visible = self.pickerVisible();
+        if (!self.pickerOpen() or index >= visible.len) return null;
+        return visible[index];
     }
 
     pub fn selectPickerIndex(self: *State, index: usize) bool {
-        if (!self.pickerOpen() or index >= self.picker_choices.len) return false;
+        if (!self.pickerOpen() or index >= self.pickerVisible().len) return false;
         self.picker.selected = index;
         return true;
+    }
+
+    pub fn pickerQuery(self: *const State) []const u8 {
+        return self.picker_query[0..self.picker_query_len];
+    }
+
+    /// Append a typed character to the picker search. Only owned lists (the
+    /// font picker) are searchable; the short shell list ignores typing.
+    pub fn insertPickerChar(self: *State, cp: u21) bool {
+        if (!self.pickerOpen()) return false;
+        const alloc = self.picker_allocator orelse return true;
+        if (cp < 32 or cp == 127) return true;
+        var utf8: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(cp, &utf8) catch return true;
+        if (self.picker_query_len + n > self.picker_query.len) return true;
+        @memcpy(self.picker_query[self.picker_query_len..][0..n], utf8[0..n]);
+        self.picker_query_len += n;
+        self.refilterPicker(alloc);
+        return true;
+    }
+
+    fn pickerBackspace(self: *State) void {
+        if (self.picker_query_len == 0) return;
+        var end = self.picker_query_len - 1;
+        while (end > 0 and (self.picker_query[end] & 0xC0) == 0x80) end -= 1; // drop a whole UTF-8 char
+        self.picker_query_len = end;
+        if (self.picker_allocator) |alloc| self.refilterPicker(alloc);
+    }
+
+    fn refilterPicker(self: *State, alloc: std.mem.Allocator) void {
+        self.picker.selected = 0;
+        self.picker_view.clearRetainingCapacity();
+        const query = self.pickerQuery();
+        for (self.picker_choices) |choice| {
+            if (std.ascii.indexOfIgnoreCase(choice, query) == null) continue;
+            self.picker_view.append(alloc, choice) catch return;
+        }
     }
 
     pub fn beginProxyEdit(self: *State, current: []const u8) void {
@@ -298,11 +349,15 @@ pub const State = struct {
             return switch (ev.key) {
                 .escape, .arrow_left => .close_picker,
                 .arrow_down, .tab => blk: {
-                    self.picker.move(1, self.picker_choices.len);
+                    self.picker.move(1, self.pickerVisible().len);
                     break :blk null;
                 },
                 .arrow_up => blk: {
-                    self.picker.move(-1, self.picker_choices.len);
+                    self.picker.move(-1, self.pickerVisible().len);
+                    break :blk null;
+                },
+                .backspace, .delete => blk: {
+                    self.pickerBackspace();
                     break :blk null;
                 },
                 .enter, .arrow_right => .choose_picker_value,
@@ -329,7 +384,7 @@ pub const State = struct {
     pub fn handleScroll(self: *State, delta_y: f64) void {
         if (!self.visible) return;
         if (self.pickerOpen()) {
-            if (delta_y > 0) self.picker.move(-1, self.picker_choices.len) else if (delta_y < 0) self.picker.move(1, self.picker_choices.len);
+            if (delta_y > 0) self.picker.move(-1, self.pickerVisible().len) else if (delta_y < 0) self.picker.move(1, self.pickerVisible().len);
             return;
         }
         if (delta_y > 0) {
@@ -527,6 +582,41 @@ test "settings page choice picker handles navigation selection and cancel" {
     try std.testing.expectEqualStrings("fish", state.pickerValue().?);
     try std.testing.expectEqual(Action.choose_picker_value, state.handleKey(.{ .key = .enter }).?);
     try std.testing.expectEqual(Action.close_picker, state.handleKey(.{ .key = .escape }).?);
+}
+
+test "settings page font picker filters by typed text and backspace restores the list" {
+    const gpa = std.testing.allocator;
+    const raw = [_][]const u8{ "JetBrains Mono", "Microsoft YaHei", "SimHei", "SimSun" };
+    const choices = try gpa.alloc([]const u8, raw.len);
+    for (raw, 0..) |name, i| choices[i] = try gpa.dupe(u8, name);
+
+    var state = State{ .visible = true };
+    state.openPicker(.font_family, choices, "JetBrains Mono", true, gpa);
+    defer state.closePicker(null);
+
+    for ("HEI") |ch| try std.testing.expect(state.insertPickerChar(ch));
+    try std.testing.expectEqualStrings("HEI", state.pickerQuery());
+    try std.testing.expectEqual(@as(usize, 2), state.pickerCount());
+    try std.testing.expectEqualStrings("Microsoft YaHei", state.pickerValue().?);
+    _ = state.handleKey(.{ .key = .arrow_down });
+    try std.testing.expectEqualStrings("SimHei", state.pickerValue().?);
+    try std.testing.expectEqual(Action.choose_picker_value, state.handleKey(.{ .key = .enter }).?);
+
+    try std.testing.expect(state.insertPickerChar('x'));
+    try std.testing.expectEqual(@as(usize, 0), state.pickerCount());
+    try std.testing.expect(state.pickerValue() == null);
+
+    for (0..4) |_| _ = state.handleKey(.{ .key = .backspace });
+    try std.testing.expectEqualStrings("", state.pickerQuery());
+    try std.testing.expectEqual(raw.len, state.pickerCount());
+}
+
+test "settings page shell picker ignores typing" {
+    const choices = [_][]const u8{ "bash", "zsh" };
+    var state = State{ .visible = true };
+    state.openPicker(.shell, &choices, "bash", false, null);
+    try std.testing.expect(state.insertPickerChar('z'));
+    try std.testing.expectEqual(@as(usize, 2), state.pickerCount());
 }
 
 test "settings page hit test selects a picker row without AppWindow" {
