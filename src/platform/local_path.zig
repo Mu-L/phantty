@@ -294,7 +294,10 @@ pub fn forLocalOpen(path: []const u8, buf: []u8) ?[]const u8 {
 pub fn forLocalOpenForOs(os_tag: std.Target.Os.Tag, path: []const u8, buf: []u8) ?[]const u8 {
     const decoded = percentDecodeInto(path, buf) orelse return null;
     const stripped = stripLeadingSlashBeforeDrive(decoded);
-    if (os_tag != .windows) {
+    // Only Windows drive/UNC paths get native separators. A Unix path such as a
+    // WSL/SSH OSC 7 cwd (`/home/me/proj`) must stay Unix, or `\home\me\proj`
+    // breaks remote resolution, WSL guest-path translation, and cwd inheritance.
+    if (os_tag != .windows or driveOrUncRootLen(stripped) == 0) {
         if (stripped.ptr == buf.ptr) return stripped;
         if (stripped.len > buf.len) return null;
         std.mem.copyForwards(u8, buf, stripped);
@@ -429,6 +432,15 @@ test "platform local path rewrites OSC 7 drive paths for local open" {
     try std.testing.expectEqualStrings(
         "/home/xzg/docs/foo.png",
         forLocalOpenForOs(.linux, "/home/xzg/docs/foo.png", &buf).?,
+    );
+    // WSL/SSH OSC 7 cwds reach this on Windows too; they must stay Unix paths.
+    try std.testing.expectEqualStrings(
+        "/home/xzg/project/research-integrity-audit",
+        forLocalOpenForOs(.windows, "/home/xzg/project/research-integrity-audit", &buf).?,
+    );
+    try std.testing.expectEqualStrings(
+        "/home/xzg/my proj",
+        forLocalOpenForOs(.windows, "/home/xzg/my%20proj", &buf).?,
     );
 
     try std.testing.expect(isDriveAbsolute("/D:\\wispterm\\foo.png"));
