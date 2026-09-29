@@ -43,6 +43,7 @@ const confirm_modals = @import("overlays/confirm_modals.zig");
 const settings_page = @import("overlays/settings_page.zig");
 const settings_page_layout = @import("overlays/settings_page_layout.zig");
 const settings_page_renderer = @import("settings_page_renderer.zig");
+const settings_picker = @import("overlays/settings_picker.zig");
 const toasts = @import("overlays/toasts.zig");
 const ssh_profiles = @import("overlays/ssh_profiles.zig");
 const ssh_profiles_layout = @import("overlays/ssh_profiles_layout.zig");
@@ -6928,7 +6929,8 @@ pub fn settingsPageHandleKey(ev: input_key.KeyEvent) AppWindow.UiEffect {
 
 pub fn settingsPageInsertChar(cp: u21) bool {
     if (!settingsPageVisible()) return false;
-    return settingsState().insertProxyChar(cp);
+    const state = settingsState();
+    return state.insertProxyChar(cp) or state.insertPickerChar(cp);
 }
 
 fn saveProxyDraft(allocator: std.mem.Allocator) void {
@@ -7060,14 +7062,14 @@ fn executeSettingsAction(action: SettingsAction) void {
     }
 }
 
+/// The bundled default family (config.zig default); listed first in the picker.
+const DEFAULT_FONT_FAMILY = (Config{}).@"font-family";
+
 fn openFontFamilyPicker(allocator: std.mem.Allocator, current: []const u8) void {
     settingsState().closePicker(allocator);
     const discovery = font.g_font_discovery orelse return;
-    const choices = discovery.listFontFamilies(allocator) catch return;
-    if (choices.len == 0) {
-        allocator.free(choices);
-        return;
-    }
+    const listed = discovery.listFontFamilies(allocator) catch return;
+    const choices = settings_picker.fontFamilyChoices(allocator, listed, DEFAULT_FONT_FAMILY) catch return;
     settingsState().openPicker(.font_family, choices, current, true, allocator);
 }
 
@@ -7272,6 +7274,7 @@ pub fn renderSettingsPage(window_height: f32, top_offset: f32, content_x: f32, c
         .state = state,
         .rows = rows_storage[0..row_count],
         .picker_current = picker_current,
+        .picker_default = if (state.pickerKind() == .font_family) DEFAULT_FONT_FAMILY else "",
         .default_shell_label = shellSettingText("", &default_shell_buf),
     }, layout, window_height);
 }

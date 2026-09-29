@@ -29,6 +29,8 @@ pub const View = struct {
     state: *const settings_page.State,
     rows: []const Row,
     picker_current: []const u8 = "",
+    // Font picker only: the built-in family, tagged so it can be found again.
+    picker_default: []const u8 = "",
     default_shell_label: []const u8 = "",
 };
 
@@ -59,10 +61,8 @@ pub fn render(draw: DrawContext, view: View, layout: settings_page_layout.Layout
         .font_family => if (i18n.lang() == .zh_CN) "选择字体" else "Choose font family",
         .shell => if (i18n.lang() == .zh_CN) "选择默认 Shell" else "Choose default shell",
     } else categoryLabel(state.category);
-    const subtitle = if (picker_open)
-        (if (i18n.lang() == .zh_CN) "用方向键选择，按 Enter 应用，按 Esc 返回" else "Use arrows to choose, Enter to apply, Esc to go back")
-    else
-        categoryDescription(state.category);
+    var subtitle_buf: [160]u8 = undefined;
+    const subtitle = if (picker_open) pickerSubtitle(state, &subtitle_buf) else categoryDescription(state.category);
     _ = draw.renderTextLimited(page_title, layout.content_x, textYFromTop(draw, window_height, layout.page_top_px + 28), mixColor(draw.fg, draw.accent, 0.10), layout.content_w);
     _ = draw.renderTextLimited(subtitle, layout.content_x, textYFromTop(draw, window_height, layout.page_top_px + 28 + lineHeight(draw)), muted, layout.content_w);
     draw.fillQuadAlpha(layout.content_x, @round(window_height - layout.row_top_px), layout.content_w, 1, border, 0.52);
@@ -71,7 +71,8 @@ pub fn render(draw: DrawContext, view: View, layout: settings_page_layout.Layout
         for (0..state.pickerCount()) |row_index| {
             const value = state.pickerValueAt(row_index) orelse continue;
             const label = if (state.pickerKind().? == .shell and value.len == 0) view.default_shell_label else value;
-            renderPickerRow(draw, layout, window_height, row_index, label, state.picker.selected == row_index, std.ascii.eqlIgnoreCase(value, view.picker_current));
+            const is_default = view.picker_default.len > 0 and std.ascii.eqlIgnoreCase(value, view.picker_default);
+            renderPickerRow(draw, layout, window_height, row_index, label, state.picker.selected == row_index, std.ascii.eqlIgnoreCase(value, view.picker_current), is_default);
         }
     } else {
         for (view.rows, 0..) |row, row_index| {
@@ -151,7 +152,22 @@ fn renderCentered(draw: DrawContext, text: []const u8, slot: settings_page_layou
     _ = draw.renderTextLimited(text, text_x, rowTextY(draw, y, h), color, slot.w);
 }
 
-fn renderPickerRow(draw: DrawContext, layout: settings_page_layout.Layout, window_height: f32, row_index: usize, label: []const u8, selected: bool, current: bool) void {
+fn pickerSubtitle(state: *const settings_page.State, buf: []u8) []const u8 {
+    const zh = i18n.lang() == .zh_CN;
+    const query = state.pickerQuery();
+    if (query.len > 0) {
+        return (if (zh)
+            std.fmt.bufPrint(buf, "搜索：{s}  ·  {d} 项", .{ query, state.pickerCount() })
+        else
+            std.fmt.bufPrint(buf, "Search: {s}  ·  {d} matches", .{ query, state.pickerCount() })) catch query;
+    }
+    if (state.pickerKind() == .font_family) {
+        return if (zh) "输入名称搜索，用方向键选择，按 Enter 应用，按 Esc 返回" else "Type to search, arrows to choose, Enter to apply, Esc to go back";
+    }
+    return if (zh) "用方向键选择，按 Enter 应用，按 Esc 返回" else "Use arrows to choose, Enter to apply, Esc to go back";
+}
+
+fn renderPickerRow(draw: DrawContext, layout: settings_page_layout.Layout, window_height: f32, row_index: usize, label: []const u8, selected: bool, current: bool, is_default: bool) void {
     const visible = layout.visibleRow(window_height, row_index) orelse return;
     if (selected) {
         draw.fillQuadAlpha(layout.content_x + 2, visible.gl_y + 8, 3, layout.row_h - 16, draw.accent, 0.82);
@@ -160,7 +176,16 @@ fn renderPickerRow(draw: DrawContext, layout: settings_page_layout.Layout, windo
     if (visible.visible_index > 0) draw.fillQuadAlpha(layout.content_x + 18, visible.gl_y + layout.row_h - 1, layout.content_w - 36, 1, mixColor(draw.bg, draw.fg, 0.14), 0.62);
     const text_y = rowTextY(draw, visible.gl_y, layout.row_h);
     _ = draw.renderTextLimited(label, layout.content_x + 20, text_y, if (selected) mixColor(draw.fg, draw.accent, 0.16) else draw.fg, layout.content_w - 170);
-    if (current) _ = draw.renderTextLimited(if (i18n.lang() == .zh_CN) "当前" else "Current", layout.content_x + layout.content_w - 100, text_y, draw.accent, 82);
+    const zh = i18n.lang() == .zh_CN;
+    const tag: []const u8 = if (current and is_default)
+        (if (zh) "当前 · 默认" else "Current · Default")
+    else if (current)
+        (if (zh) "当前" else "Current")
+    else if (is_default)
+        (if (zh) "默认" else "Default")
+    else
+        "";
+    if (tag.len > 0) _ = draw.renderTextLimited(tag, layout.content_x + layout.content_w - 150, text_y, if (current) draw.accent else mixColor(draw.bg, draw.fg, 0.60), 132);
 }
 
 fn renderScrollbar(draw: DrawContext, layout: settings_page_layout.Layout, window_height: f32, item_count: usize) void {

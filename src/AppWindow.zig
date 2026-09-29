@@ -5986,18 +5986,20 @@ fn applyReloadedConfig(allocator: std.mem.Allocator, cfg: *const Config) void {
     const new_font_size = cfg.@"font-size";
     const new_weight = font_backend.fontWeightFromValue(cfg.@"font-style".value());
     const new_family = cfg.@"font-family";
+    // Must run before the setters below overwrite the CJK/fallback globals.
+    const font_changed = fontReloadNeeded(cfg);
     // Copy into the font module's own buffers: `cfg` is deinit'd right after
     // this returns, and these globals are read lazily on the next fallback
     // lookup. Aliasing the config-owned slices here was a use-after-free.
     font.setCjkFontFamily(cfg.@"font-family-cjk");
     font.setFallbackFontFamilies(cfg.@"font-family-fallback");
 
-    const font_changed = new_font_size != font.g_font_size;
-
     // Only reload font faces when font parameters actually changed.
     // Theme-only changes must not trigger a font reload + window resize.
     if (font_changed) {
         if (reloadFontFaces(allocator, new_family, new_weight, new_font_size, ft_lib)) {
+            setRequestedFont(new_family);
+            g_requested_weight = new_weight;
             if (g_window) |w| {
                 const is_os_sized = window_backend.isFullscreen(w) or window_backend.isMaximized(w);
                 if (is_os_sized) {
@@ -6015,6 +6017,56 @@ fn applyReloadedConfig(allocator: std.mem.Allocator, cfg: *const Config) void {
     }
 
     std.debug.print("Config reloaded successfully\n", .{});
+}
+
+/// True when a reloaded config changes anything the glyph faces are built from.
+/// Only `font-size` used to count, so picking a new family or style in Settings
+/// looked applied but took effect only after a restart (#647).
+fn fontReloadNeeded(cfg: *const Config) bool {
+    return cfg.@"font-size" != font.g_font_size or
+        font_backend.fontWeightFromValue(cfg.@"font-style".value()) != g_requested_weight or
+        !std.mem.eql(u8, cfg.@"font-family", g_requested_font) or
+        !optionalStrEql(cfg.@"font-family-cjk", font.g_cjk_font_family) or
+        !optionalStrEql(cfg.@"font-family-fallback", font.g_fallback_font_families);
+}
+
+fn optionalStrEql(a: ?[]const u8, b: ?[]const u8) bool {
+    if (a == null or b == null) return a == null and b == null;
+    return std.mem.eql(u8, a.?, b.?);
+}
+
+test "fontReloadNeeded: family, style, and CJK/fallback changes reload fonts, not just size" {
+    const saved_font = g_requested_font;
+    const saved_weight = g_requested_weight;
+    const saved_size = font.g_font_size;
+    const saved_cjk = font.g_cjk_font_family;
+    const saved_fallback = font.g_fallback_font_families;
+    defer {
+        g_requested_font = saved_font;
+        g_requested_weight = saved_weight;
+        font.g_font_size = saved_size;
+        font.g_cjk_font_family = saved_cjk;
+        font.g_fallback_font_families = saved_fallback;
+    }
+
+    var cfg: Config = .{};
+    g_requested_font = cfg.@"font-family";
+    g_requested_weight = font_backend.fontWeightFromValue(cfg.@"font-style".value());
+    font.g_font_size = cfg.@"font-size";
+    font.g_cjk_font_family = cfg.@"font-family-cjk";
+    font.g_fallback_font_families = cfg.@"font-family-fallback";
+    try std.testing.expect(!fontReloadNeeded(&cfg));
+
+    cfg.@"font-family" = "SimSun";
+    try std.testing.expect(fontReloadNeeded(&cfg));
+    cfg.@"font-family" = g_requested_font;
+
+    cfg.@"font-family-cjk" = "Microsoft YaHei";
+    try std.testing.expect(fontReloadNeeded(&cfg));
+    cfg.@"font-family-cjk" = font.g_cjk_font_family;
+
+    cfg.@"font-size" += 1;
+    try std.testing.expect(fontReloadNeeded(&cfg));
 }
 
 const MemoryDebugTotals = struct {

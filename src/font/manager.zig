@@ -556,6 +556,8 @@ pub fn indexToRgb(color_idx: u8) [3]f32 {
 /// Pack a bitmap into an atlas (growing if necessary), returning the region.
 /// `src_buffer` may be null for zero-size bitmaps (returns a zero-size region).
 /// `src_pitch` is the stride of the source bitmap in bytes (may differ from width).
+/// `mono` marks a 1-bit-per-pixel source (FT_PIXEL_MODE_MONO), e.g. the embedded
+/// bitmap strikes SimSun/NSimSun carry at 12-17 ppem (#647).
 pub fn packBitmapIntoAtlas(
     atlas_ptr: *?FontAtlas,
     alloc: std.mem.Allocator,
@@ -563,6 +565,7 @@ pub fn packBitmapIntoAtlas(
     height: u32,
     src_buffer: ?[*]const u8,
     src_pitch: u32,
+    mono: bool,
 ) ?FontAtlas.Region {
     // Zero-size glyph (e.g., space) — return a trivial region
     if (width == 0 or height == 0) {
@@ -590,11 +593,7 @@ pub fn packBitmapIntoAtlas(
     const tight = alloc.alloc(u8, @as(usize, width) * height) catch return null;
     defer alloc.free(tight);
     const src = src_buffer orelse return null;
-    for (0..height) |row| {
-        const src_offset = row * src_pitch;
-        const dst_offset = row * width;
-        @memcpy(tight[dst_offset..][0..width], src[src_offset..][0..width]);
-    }
+    copyGlyphRows(tight, src, width, height, src_pitch, mono);
 
     // Try to reserve space; grow atlas if full (up to reasonable max)
     var region = atlas.reserve(alloc, width, height) catch |err| switch (err) {
@@ -616,6 +615,38 @@ pub fn packBitmapIntoAtlas(
     region.height = height;
 
     return region;
+}
+
+/// Copy a FreeType bitmap into a tight 8-bit coverage buffer. A 1bpp (mono)
+/// source is expanded to 0/255 per pixel; copying its packed bytes as gray
+/// coverage is what drew SimSun CJK as hatched garbage.
+fn copyGlyphRows(dst: []u8, src: [*]const u8, width: u32, height: u32, src_pitch: u32, mono: bool) void {
+    for (0..height) |row| {
+        const line = src[row * src_pitch ..];
+        const out = dst[row * width ..][0..width];
+        if (!mono) {
+            @memcpy(out, line[0..width]);
+            continue;
+        }
+        for (out, 0..) |*px, x| {
+            const bit = (line[x / 8] >> @intCast(7 - x % 8)) & 1;
+            px.* = if (bit != 0) 255 else 0;
+        }
+    }
+}
+
+test "copyGlyphRows expands 1bpp mono bitmaps and copies gray rows by pitch" {
+    var out: [2 * 10]u8 = undefined;
+    // Two 10px mono rows, pitch 2: 0b1010_0000 0b01xx_xxxx, then 0b0000_0001 0b10xx_xxxx.
+    const mono_src = [_]u8{ 0b1010_0000, 0b0100_0000, 0b0000_0001, 0b1000_0000 };
+    copyGlyphRows(&out, &mono_src, 10, 2, 2, true);
+    try std.testing.expectEqualSlices(u8, &.{ 255, 0, 255, 0, 0, 0, 0, 0, 0, 255 }, out[0..10]);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0, 0, 0, 0, 255, 255, 0 }, out[10..20]);
+
+    var gray: [2 * 2]u8 = undefined;
+    const gray_src = [_]u8{ 1, 2, 99, 3, 4, 99 }; // pitch 3 > width 2
+    copyGlyphRows(&gray, &gray_src, 2, 2, 3, false);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4 }, &gray);
 }
 
 /// Pack a tightly-packed pixel buffer into an atlas (no pitch conversion needed).
@@ -874,6 +905,7 @@ pub fn loadGlyph(codepoint: u32) ?Character {
         bitmap.rows,
         bitmap.buffer,
         @intCast(bitmap.pitch),
+        bitmap.pixel_mode == freetype.c.FT_PIXEL_MODE_MONO,
     ) orelse return null;
 
     const char_data = Character{
@@ -1062,6 +1094,7 @@ pub fn loadGraphemeGlyph(base_cp: u21, extra_cps: []const u21) ?Character {
         bitmap.rows,
         bitmap.buffer,
         @intCast(bitmap.pitch),
+        bitmap.pixel_mode == freetype.c.FT_PIXEL_MODE_MONO,
     ) orelse return null;
 
     const char_data = Character{
@@ -1178,6 +1211,7 @@ pub fn loadTitlebarGlyph(codepoint: u32) ?Character {
         bitmap.rows,
         bitmap.buffer,
         @intCast(bitmap.pitch),
+        bitmap.pixel_mode == freetype.c.FT_PIXEL_MODE_MONO,
     ) orelse return null;
 
     const ch = Character{
@@ -1220,6 +1254,7 @@ pub fn loadIconGlyph(codepoint: u32) ?Character {
         bitmap.rows,
         bitmap.buffer,
         @intCast(bitmap.pitch),
+        bitmap.pixel_mode == freetype.c.FT_PIXEL_MODE_MONO,
     ) orelse return null;
 
     const ch = Character{
