@@ -225,6 +225,11 @@ pub fn wslAvailable() bool {
     return false;
 }
 
+pub fn wslDefaultDistroName(out: []u8) ?[]const u8 {
+    _ = out;
+    return null;
+}
+
 pub fn wslInteractiveCommand(buf: []u8, cwd: ?[]const u8) ?[]const u8 {
     _ = buf;
     _ = cwd;

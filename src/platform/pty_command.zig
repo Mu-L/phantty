@@ -253,6 +253,12 @@ pub fn wslAvailable() bool {
     return impl.wslAvailable();
 }
 
+/// Default WSL distribution name as UTF-8 in `out`, from the registry (no
+/// `wsl.exe` spawn). Null on non-Windows or when no distro is registered.
+pub fn wslDefaultDistroName(out: []u8) ?[]const u8 {
+    return impl.wslDefaultDistroName(out);
+}
+
 /// Whether a resolved shell command should fall back to a guaranteed local
 /// shell because it targets WSL while no WSL installation is available.
 pub fn shellFallBackDecision(kind: LaunchKind, wsl_available: bool) bool {

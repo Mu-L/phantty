@@ -31,6 +31,14 @@ test "app source guards" {
     if (std.mem.indexOf(u8, app_window_source, "W" ++ "M_") != null) {
         return guardFailed("AppWindow.zig comments and logic must describe platform-neutral event handling, not Win32 messages");
     }
+    if (std.mem.indexOf(u8, app_window_source, "if (split_kind == .local) getActiveCwd(&cwd_buf) else null") == null) {
+        return guardFailed("WSL/SSH splits must not resolve a native cwd (wsl.exe --list + cold UNC cwd froze the first WSL split)");
+    }
+    const wsl_source = try readSource(allocator, "platform/wsl.zig");
+    defer allocator.free(wsl_source);
+    if (std.mem.indexOf(u8, wsl_source, "process." ++ "Child") != null) {
+        return guardFailed("platform/wsl.zig must resolve the distro from the registry, not by spawning wsl.exe (blocks the UI thread)");
+    }
     if (std.mem.indexOf(u8, app_window_source, ".restored_session => syncActiveSurfaceCaches(),") == null) {
         return guardFailed("restored startup tabs must seed the active Agent/Copilot surface context");
     }
